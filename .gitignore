@@ -1,0 +1,43 @@
+# --- Virtual environments ---
+.venv/
+venv/
+env/
+
+# --- Python caches and build artifacts ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# --- Test / tooling caches ---
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# --- Local environment files and secrets ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# --- Generated reports (keep the folder and any explicit baselines) ---
+reports/*
+!reports/.gitkeep
+!reports/baselines/
+
+# --- Editor / OS noise ---
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# --- Claude Code local (per-user) settings ---
+.claude/settings.local.json

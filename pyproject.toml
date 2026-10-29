@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-quality-lab"
+version = "0.1.0"
+description = "Automated evaluation framework for a mock AI chatbot with configurable guardrails."
+readme = "README.md"
+requires-python = ">=3.12"
+# Runtime dependencies: intentionally none. The framework uses the standard library only.
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+# -ra: summarise skips/xfails/failures; --strict-markers: typo'd markers are errors, not silent no-ops.
+addopts = "-ra --strict-markers"
+markers = [
+    "setup: environment and packaging sanity checks",
+]
