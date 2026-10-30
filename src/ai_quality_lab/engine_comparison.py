@@ -215,6 +215,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("promptfoo_results", type=Path, help="Promptfoo `eval -o` JSON file")
     parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET_PATH)
+    parser.add_argument("--output", type=Path, help="also write a JSON summary here (for CI)")
     args = parser.parse_args(argv)
 
     try:
@@ -227,7 +228,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     custom = run_evaluation_suite(cases, mock_chatbot_factory(promptfoo.simulated_failure))
     comparison = compare_engines(custom, promptfoo)
     print(format_comparison(comparison))
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(json.dumps(comparison_to_dict(comparison), indent=2),
+                               encoding="utf-8")
     return 0 if not comparison.disagreements else 1
+
+
+def comparison_to_dict(comparison: EngineComparison) -> dict:
+    return {
+        "simulated_failure": comparison.simulated_failure.value,
+        "cases_compared": len(comparison.rows),
+        "agreements": len(comparison.rows) - len(comparison.disagreements),
+        "disagreements": [row.case_id for row in comparison.disagreements],
+        "custom_outcomes": comparison.outcome_counts("custom"),
+        "promptfoo_outcomes": comparison.outcome_counts("promptfoo"),
+        "custom_release_readiness": comparison.custom_summary.release_readiness.value,
+    }
 
 
 if __name__ == "__main__":

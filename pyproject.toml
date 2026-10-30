@@ -15,6 +15,8 @@ dependencies = []
 [project.optional-dependencies]
 dev = [
     "pytest>=8.3",
+    # Phase 7: parse .github/workflows/*.yml in tests (structural workflow validation).
+    "pyyaml>=6",
 ]
 # Phase 5: DeepEval for LLM evaluation. Pinned exactly; it pulls in ~60 transitive packages.
 # `ollama` is required by DeepEval's OllamaModel (the default local judge) but is not a

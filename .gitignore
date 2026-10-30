@@ -54,3 +54,7 @@ Desktop.ini
 
 # --- RAG vector indexes (rebuildable from data/knowledge_base) ---
 .rag_index/
+
+# --- CI artifacts produced locally by ci_check / ci_summary ---
+ci-artifacts/
+downloaded/

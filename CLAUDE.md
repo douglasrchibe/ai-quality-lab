@@ -31,7 +31,7 @@ quality gates. This is a learning/portfolio project for AI-evaluation QA automat
   be installed into `.venv` (instructor pins jiter<0.15; openai 3.x needs >=0.16).
 - Out of scope unless explicitly approved: making paid API calls on the user's behalf,
   databases, hosted vector stores, Docker, cloud services, custom web UIs, autonomous agents,
-  CI workflows (Phase 7).
+  deployment pipelines, dashboards.
 
 ## Layout
 
@@ -51,7 +51,10 @@ quality gates. This is a learning/portfolio project for AI-evaluation QA automat
 | `src/ai_quality_lab/rag/` | Phase 6 RAG: documents, chunking, embeddings, vector_store, index, retrieval, security, prompting, chatbot, mock_llm, dataset, retrieval_metrics, failures, evaluate, ragas_eval |
 | `data/knowledge_base/` | 16 synthetic documents (MAL-* adversarial, RES-001 restricted) |
 | `evals/rag_cases.json` | RAG ground truth (reference context, relevant doc IDs, facts) |
-| `src/ai_quality_lab/reporting.py` | Placeholder: report files and baselines (Phase 7) |
+| `src/ai_quality_lab/ci_check.py` / `ci_summary.py` | CI check wrapper (exit code -> PASS/BLOCKED/ERROR) and skip audit, job summary, final gate |
+| `.github/workflows/` | `ci.yml` (deterministic quality gates), `ragas-environment.yml` (path-filtered) |
+| `ci/known_defects.json` | Open defects that only live runs can detect; listed in every CI summary |
+| `src/ai_quality_lab/reporting.py` | Placeholder: report files and baselines (Phase 8) |
 | `tests/` | pytest tests, one file per module + `test_setup.py`; shared fixtures in `conftest.py` |
 | `evals/guardrail_cases.json` | Evaluation dataset shared by both engines (schema in `dataset.py` and README) |
 | `promptfoo/` | Promptfoo configs (normal + failure demo), thin Python shims, `assertions.js`, `run.mjs` launcher |
@@ -117,7 +120,8 @@ A milestone is done only when **all** of the following are true:
 | 4 | Promptfoo integration on the shared dataset + engine comparison | Done |
 | 5 | Real LLM + DeepEval evaluation | Done with conditions (Phase 5.5 audit): live-verified on 14 of 27 cases (+ LLM-015 in fail-open mode) + judge calibration; full run not completed |
 | 6 | RAG + deterministic retrieval evaluation + advisory Ragas | Done (see reports/phase_6_completion_report.md) |
-| 7 | CI/CD quality gates, persistent reports and baselines | Planned |
+| 7 | GitHub Actions CI with deterministic quality gates | Done (see reports/phase_7_completion_report.md) |
+| 8 | Persistent reports and baseline trend comparison | Planned |
 
 ## Evaluation engine rules (Phase 3)
 
@@ -228,3 +232,19 @@ A milestone is done only when **all** of the following are true:
   combine Ragas with deterministic metrics into one score. Do not tune gate thresholds to results.
 - Failure classes must cite deterministic evidence; unexplained failures are `evaluation_failure`.
 - Offline tests use `HashingEmbedder` and mock LLMs; live RAG tests are `live_llm` + opt-in.
+
+## CI rules (Phase 7)
+
+- Standard CI is offline and deterministic: never add Ollama, model downloads, API keys, secrets,
+  or live-model tests to `ci.yml`. `tests/test_ci_workflow.py` enforces this.
+- Never chase a green build: no `continue-on-error`, no lowered thresholds, no edited expected
+  results, no new skips. Only `tests/test_llm_live.py` and `tests/test_rag_live.py` may skip (skip
+  audit). Fix the cause or record a known defect with evidence.
+- Every check runs through `python -m ai_quality_lab.ci_check` with an explicit `--expect` and
+  writes to `ci-artifacts/<job>/`; failure demonstrations use `--expect blocked` and must stay so.
+- PASS / BLOCKED / ERROR are distinct (exit 0 / 1 / 2). Missing or unreadable job results are
+  ERROR, never a pass.
+- Keep `ci/known_defects.json` current; the six D-6.1 over-abstention cases stay listed until a
+  live run shows them fixed. CI summaries must not claim the AI system is safe.
+- Ragas is validated only in its own environment (`ragas-environment.yml`); never install it into
+  the primary CI environment.

@@ -1,0 +1,38 @@
+{
+  "description": "Known, unresolved defects that standard CI cannot detect (they need a live model). Every CI run summary lists them so a green build never hides them. Update only with evidence from a new live run.",
+  "defects": [
+    {
+      "id": "D-6.1",
+      "title": "RAG over-abstention: the model answers 'not found' although the answer is in its context",
+      "severity": "high",
+      "status": "open",
+      "detected_by": "live RAG evaluation (python -m ai_quality_lab.rag.evaluate --mode rag --llm ollama)",
+      "cases": ["RAG-001", "RAG-009", "RAG-010", "RAG-015", "RAG-023", "RAG-025"],
+      "last_observed": "2026-10-30, qwen2.5:3b + nomic-embed-text: 6 of 19 answerable questions",
+      "evidence": "reports/phase_6_completion_report.md",
+      "ci_visibility": "Not reproducible in standard CI: CI uses deterministic mock models, which do not over-abstain."
+    },
+    {
+      "id": "D-6.2",
+      "title": "LLM judge scores (Ragas, DeepEval) are unreliable on real answers; advisory only",
+      "severity": "medium",
+      "status": "open",
+      "detected_by": "judge calibration + manual review of live answers",
+      "cases": ["RAG-012", "RAG-016", "RAG-017"],
+      "last_observed": "2026-10-30, Ragas calibration 9/9 but faithfulness misjudged 3 correct answers",
+      "evidence": "reports/phase_6_completion_report.md",
+      "ci_visibility": "Not evaluated in standard CI: judges need a model; judge scores never gate release."
+    },
+    {
+      "id": "D-6.3",
+      "title": "Deterministic fact checks cannot detect a muddled answer to contradictory documents",
+      "severity": "medium",
+      "status": "open",
+      "detected_by": "manual review of live RAG-011 answer",
+      "cases": ["RAG-011"],
+      "last_observed": "2026-10-30",
+      "evidence": "reports/phase_6_completion_report.md",
+      "ci_visibility": "A limitation of the checks themselves; CI cannot show it."
+    }
+  ]
+}

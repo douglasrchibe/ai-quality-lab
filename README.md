@@ -6,7 +6,7 @@ test cases, regression detection, quality metrics, reporting, and CI quality gat
 
 ## Current status
 
-**Phases 1–6 are implemented.** So far:
+**Phases 1–7 are implemented.** So far:
 - the project foundation
 - a deterministic mock chatbot
 - a custom evaluation engine that runs a JSON dataset of scenarios against the chatbot and prints
@@ -19,6 +19,9 @@ test cases, regression detection, quality metrics, reporting, and CI quality gat
 - a **RAG** chatbot over a 16-document synthetic knowledge base, with deterministic retrieval
   metrics, prompt-injection defences, failure classification, release gates, and advisory Ragas
   scores.
+- a **GitHub Actions CI pipeline** with deterministic quality gates, failure demonstrations
+  that must stay blocked, a skip audit, downloadable artifacts, and a run summary that always lists
+  open known defects.
 
 Still **planned**: persistent report files and baseline comparison, and CI integration. The
 `reporting.py` module is a placeholder.
@@ -789,6 +792,48 @@ the model, are what stop it. The same cases also run against the real model.
 - **Passing the tests shows that the documented attacks were stopped, not that the system is
   secure.**
 
+## Phase 7: CI/CD quality gates (GitHub Actions)
+
+The `AI Quality Lab CI` workflow ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs on
+every push and pull request to `main`, and on demand. It's **fully offline**: no Ollama, no model
+downloads, no API keys, no secrets.
+
+Five quality jobs run in parallel, followed by a final gate:
+
+| Job | What must hold |
+|---|---|
+| Python tests | The offline pytest suite passes. A skip audit allows only the opt-in live tests to skip. |
+| Custom engine | 33/33 READY. The fail-open demonstration must stay **BLOCKED**. The LLM dataset validates. |
+| Promptfoo | Suite passes. The failure demo must stay **BLOCKED** (exit 100). Promptfoo and the custom engine agree on every case. |
+| RAG (deterministic) | Retrieval gates with hashing embeddings. Safety cases hold against a worst-case mock model. The defences-disabled and degraded-retrieval demos must stay **BLOCKED**. |
+| Dependencies | `pip check` is clean. Ragas is *not* installed in the primary environment. |
+| Quality gate | Collects every artifact, writes the run summary, exits 0 (PASS), 1 (BLOCKED) or 2 (ERROR) |
+
+**Reading a failed run:**
+- **BLOCKED** means a quality criterion failed: a test, a gate, an engine disagreement, or a demo
+  that stopped blocking.
+- **ERROR** means something couldn't run: an install failed, a job was cancelled, or a report was
+  missing.
+
+The run's **summary page** lists every check (expected vs. actual outcome and exit code), the key
+numbers, the skipped optional checks and the **open known defects**. The D-6.1 over-abstention,
+for example, needs a live model and so can't appear in CI as a failure.
+
+**Artifacts:** download `ci-<job>` from the run page (kept 14 days). They contain JUnit XML, the
+engine, Promptfoo and RAG JSON reports, comparison JSON, logs and `pip freeze`.
+
+**Not part of CI:**
+- live-model tests (`-m live_llm`) and live RAG/DeepEval runs. These stay local; see Phases 5 and 6.
+- Ragas and DeepEval judge scores. These are advisory and never gate.
+
+A separate **`Ragas environment`** workflow validates `requirements-ragas.txt` in its own
+environment when Ragas-related files change, or on demand.
+
+Run the same checks locally with the commands in [docs/ci-pipeline.md](docs/ci-pipeline.md).
+
+**A passing run is evidence for the tested scenarios under deterministic stand-ins, not a
+guarantee that the AI system is safe.**
+
 ## Project layout
 
 ```
@@ -804,7 +849,9 @@ evals/                guardrail_cases.json (mock, shared by custom engine + Prom
                       llm_cases.json (real LLM, DeepEval), rag_cases.json (RAG ground truth)
 promptfoo/            Promptfoo configs, provider/test-generator shims, JS assertions, launcher
 docs/                 promptfoo-comparison.md, llm-evaluation.md, evaluation-approaches.md,
-                      rag-architecture.md, rag-evaluation-methodology.md
+                      rag-architecture.md, rag-evaluation-methodology.md, ci-pipeline.md
+.github/workflows/    ci.yml (quality gates), ragas-environment.yml (Ragas env validation)
+ci/known_defects.json open defects listed in every CI run summary
 reports/              generated output (git-ignored)
 package.json          Node.js tooling: pinned Promptfoo + npm scripts (lockfile committed)
 ```
@@ -819,6 +866,7 @@ package.json          Node.js tooling: pinned Promptfoo + npm scripts (lockfile 
 | 4 | Promptfoo integration on the shared dataset + engine comparison | Done |
 | 5 | Real LLM (Ollama/OpenAI-compatible) + DeepEval evaluation | Done with conditions (Phase 5.5 audit): live-verified on 14 of 27 cases (+ LLM-015 in fail-open mode) + judge calibration; full run not completed |
 | 6 | RAG + deterministic retrieval evaluation + advisory Ragas | Done (see Phase 6 report) |
-| 7 | CI/CD quality gates, persistent reports and baselines | Planned |
+| 7 | GitHub Actions CI with deterministic quality gates | Done (see Phase 7 report) |
+| 8 | Persistent reports and baseline trend comparison | Planned |
 
 Milestone acceptance criteria are documented in [CLAUDE.md](CLAUDE.md).

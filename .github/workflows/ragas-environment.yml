@@ -1,0 +1,87 @@
+# Validates the separate Ragas environment (requirements-ragas.txt) without any model.
+#
+# Ragas 0.4.3 cannot share an environment with DeepEval's openai 3.x (instructor pins jiter<0.15),
+# so it is installed in its own virtual environment. That install pulls ~60 packages, so this
+# workflow runs only when Ragas-related files change, on pushes to main, or on demand, instead of
+# on every pull request. It never computes judge scores (that needs a model and is advisory).
+
+name: Ragas environment
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - pyproject.toml
+      - requirements-ragas.txt
+      - src/ai_quality_lab/rag/ragas_eval.py
+      - tests/test_rag_ragas.py
+      - .github/workflows/ragas-environment.yml
+  pull_request:
+    branches: [main]
+    paths:
+      - pyproject.toml
+      - requirements-ragas.txt
+      - src/ai_quality_lab/rag/ragas_eval.py
+      - tests/test_rag_ragas.py
+      - .github/workflows/ragas-environment.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ragas-env-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PYTHONUNBUFFERED: "1"
+  RAGAS_DO_NOT_TRACK: "true"
+
+jobs:
+  ragas-environment:
+    name: Ragas environment (pip check + offline tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            requirements-ragas.txt
+      - name: Install the Ragas environment
+        run: python -m pip install -r requirements-ragas.txt
+      - name: pip check
+        run: >-
+          python -m ai_quality_lab.ci_check --name ragas-pip-check --codes pip --expect pass
+          --out ci-artifacts/ragas-environment -- python -m pip check
+      - name: Ragas imports
+        if: ${{ !cancelled() }}
+        run: >-
+          python -m ai_quality_lab.ci_check --name ragas-import --codes project --expect pass
+          --out ci-artifacts/ragas-environment --
+          python -c "import ragas; from ragas.metrics.collections import Faithfulness;
+          print('ragas', ragas.__version__)"
+      - name: Offline Ragas-runner tests (fake metrics, no model)
+        if: ${{ !cancelled() }}
+        run: >-
+          python -m ai_quality_lab.ci_check --name ragas-runner-tests --codes pytest --expect pass
+          --out ci-artifacts/ragas-environment --
+          python -m pytest -q -rs -p no:cacheprovider tests/test_rag_ragas.py
+          --junitxml=ci-artifacts/ragas-environment/junit.xml
+      - name: Record resolved versions
+        if: ${{ always() }}
+        run: |
+          mkdir -p ci-artifacts/ragas-environment
+          python -m pip freeze > ci-artifacts/ragas-environment/pip-freeze.txt
+      - name: Upload artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ragas-environment
+          path: ci-artifacts/ragas-environment/
+          retention-days: 14
+          if-no-files-found: warn

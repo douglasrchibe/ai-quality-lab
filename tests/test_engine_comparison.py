@@ -169,6 +169,17 @@ def test_cli_exits_one_on_disagreement(tmp_path, custom_summary, capsys):
     assert "Disagreements: 1" in capsys.readouterr().out
 
 
+def test_cli_writes_json_summary_for_ci(tmp_path, custom_summary):
+    path = write_results(tmp_path, mirror_rows(custom_summary, flip="GR-003"))
+    output = tmp_path / "ci" / "comparison.json"
+    assert main([str(path), "--output", str(output)]) == 1
+    data = json.loads(output.read_text(encoding="utf-8"))
+    assert data["disagreements"] == ["GR-003"]
+    assert data["cases_compared"] == custom_summary.total
+    assert data["agreements"] == custom_summary.total - 1
+    assert data["simulated_failure"] == "none"
+
+
 def test_cli_exits_two_on_bad_input(tmp_path, capsys):
     assert main([str(tmp_path / "missing.json")]) == 2
     assert "Input error" in capsys.readouterr().err

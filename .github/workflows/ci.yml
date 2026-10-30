@@ -1,0 +1,302 @@
+# AI Quality Lab CI: deterministic quality gates only.
+#
+# * Fully offline: no Ollama, no model downloads, no API keys, no secrets.
+#   (Embeddings: deterministic hashing; RAG answers: deterministic mock models.)
+# * Every check runs through `python -m ai_quality_lab.ci_check`, which maps the tool's exit code to
+#   PASS / BLOCKED / ERROR and fails the step unless the expected outcome occurred. Deliberate
+#   failure demonstrations are required to stay BLOCKED.
+# * LLM-judge scores (DeepEval, Ragas) are advisory and are not computed here.
+# * Known defects that need a live model (ci/known_defects.json) are listed in every run summary.
+
+name: AI Quality Lab CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "24"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PYTHONUNBUFFERED: "1"
+  FORCE_COLOR: "0"
+  DEEPEVAL_TELEMETRY_OPT_OUT: "1"
+  RAGAS_DO_NOT_TRACK: "true"
+  AIQL_EMBED_PROVIDER: hashing # never try to reach Ollama from CI
+
+jobs:
+  python-tests:
+    name: Python tests (offline pytest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            requirements*.txt
+      - uses: actions/setup-node@v4 # node runs the JS assertion tests in test_promptfoo_adapter
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install project with dev + llm extras (DeepEval library only, no models)
+        run: python -m pip install -r requirements-llm.txt
+      - name: Run offline pytest suite
+        run: >-
+          python -m ai_quality_lab.ci_check --name pytest --codes pytest --expect pass
+          --out ci-artifacts/python-tests --
+          python -m pytest -q -rs -p no:cacheprovider
+          --junitxml=ci-artifacts/python-tests/junit.xml
+      - name: Audit skipped tests (only opt-in live tests may skip)
+        if: ${{ !cancelled() }}
+        run: >-
+          python -m ai_quality_lab.ci_check --name pytest-skip-audit --codes project --expect pass
+          --out ci-artifacts/python-tests --
+          python -m ai_quality_lab.ci_summary skips
+          --junit ci-artifacts/python-tests/junit.xml --out ci-artifacts/python-tests
+      - name: Upload artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-python-tests
+          path: ci-artifacts/python-tests/
+          retention-days: 14
+          if-no-files-found: warn
+
+  custom-engine:
+    name: Custom evaluation engine
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install project (standard library only)
+        run: python -m pip install -e .
+      - name: Custom engine on the guardrail dataset (must be READY)
+        run: >-
+          python -m ai_quality_lab.ci_check --name custom-engine --codes project --expect pass
+          --out ci-artifacts/custom-engine
+          --stdout-file ci-artifacts/custom-engine/custom-engine-report.json --
+          python -m ai_quality_lab.runner --json
+      - name: Fail-open demonstration (must stay BLOCKED)
+        if: ${{ !cancelled() }}
+        run: >-
+          python -m ai_quality_lab.ci_check --name custom-engine-fail-open-demo --codes project
+          --expect blocked --out ci-artifacts/custom-engine
+          --stdout-file ci-artifacts/custom-engine/custom-engine-fail-open-report.json --
+          python -m ai_quality_lab.runner --json --simulate-failure guardrail_fail_open
+      - name: Validate the LLM (DeepEval) dataset without calling a model
+        if: ${{ !cancelled() }}
+        run: >-
+          python -m ai_quality_lab.ci_check --name llm-dataset-validation --codes project
+          --expect pass --out ci-artifacts/custom-engine --
+          python -m ai_quality_lab.llm_eval --list
+      - name: Upload artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-custom-engine
+          path: ci-artifacts/custom-engine/
+          retention-days: 14
+          if-no-files-found: warn
+
+  promptfoo:
+    name: Promptfoo regression + engine agreement
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Install project and pinned Promptfoo (package-lock.json)
+        run: |
+          python -m pip install -e .
+          npm ci --no-fund --no-audit
+          # promptfoo/run.mjs uses this interpreter for the Python provider and test generator.
+          echo "PROMPTFOO_PYTHON=$(command -v python)" >> "$GITHUB_ENV"
+      - name: Promptfoo suite (must pass)
+        run: >-
+          python -m ai_quality_lab.ci_check --name promptfoo --codes promptfoo --expect pass
+          --out ci-artifacts/promptfoo --
+          npm run --silent eval:promptfoo -- --no-progress-bar --no-table
+      - name: Promptfoo failure demonstration (must stay BLOCKED)
+        if: ${{ !cancelled() }}
+        run: >-
+          python -m ai_quality_lab.ci_check --name promptfoo-failure-demo --codes promptfoo
+          --expect blocked --out ci-artifacts/promptfoo --
+          npm run --silent eval:promptfoo:failure-demo -- --no-progress-bar --no-table
+      - name: Agreement with the custom engine (normal run)
+        if: ${{ !cancelled() }}
+        run: >-
+          python -m ai_quality_lab.ci_check --name engine-agreement --codes project --expect pass
+          --out ci-artifacts/promptfoo --
+          python -m ai_quality_lab.engine_comparison reports/promptfoo/results.json
+          --output ci-artifacts/promptfoo/comparison-normal.json
+      - name: Agreement with the custom engine (failure demonstration)
+        if: ${{ !cancelled() }}
+        run: >-
+          python -m ai_quality_lab.ci_check --name engine-agreement-failure-demo --codes project
+          --expect pass --out ci-artifacts/promptfoo --
+          python -m ai_quality_lab.engine_comparison reports/promptfoo/failure-demo-results.json
+          --output ci-artifacts/promptfoo/comparison-failure-demo.json
+      - name: Collect Promptfoo reports
+        if: ${{ always() }}
+        run: |
+          mkdir -p ci-artifacts/promptfoo
+          cp reports/promptfoo/results.json ci-artifacts/promptfoo/promptfoo-results.json || true
+          cp reports/promptfoo/failure-demo-results.json \
+            ci-artifacts/promptfoo/promptfoo-failure-demo-results.json || true
+      - name: Upload artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-promptfoo
+          path: ci-artifacts/promptfoo/
+          retention-days: 14
+          if-no-files-found: warn
+
+  rag-deterministic:
+    name: RAG retrieval + safety gates (deterministic)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install project (standard library only)
+        run: python -m pip install -e .
+      - name: Retrieval metrics and gates (hashing embeddings)
+        run: >-
+          python -m ai_quality_lab.ci_check --name rag-retrieval --codes project --expect pass
+          --out ci-artifacts/rag-deterministic --
+          python -m ai_quality_lab.rag.evaluate --mode retrieval --embedder hashing
+          --output ci-artifacts/rag-deterministic/rag-retrieval.json
+      - name: End-to-end RAG with a worst-case mock model (defenses must hold)
+        if: ${{ !cancelled() }}
+        run: >-
+          python -m ai_quality_lab.ci_check --name rag-mock --codes project --expect pass
+          --out ci-artifacts/rag-deterministic --
+          python -m ai_quality_lab.rag.evaluate --mode rag --llm mock-gullible --embedder hashing
+          --output ci-artifacts/rag-deterministic/rag-mock.json
+      - name: Demonstration - defenses disabled (must stay BLOCKED)
+        if: ${{ !cancelled() }}
+        run: >-
+          python -m ai_quality_lab.ci_check --name rag-demo-defenses-disabled --codes project
+          --expect blocked --out ci-artifacts/rag-deterministic --
+          python -m ai_quality_lab.rag.evaluate --mode rag --llm mock-gullible --embedder hashing
+          --simulate-failure defenses_disabled
+          --output ci-artifacts/rag-deterministic/rag-demo-defenses-disabled.json
+      - name: Demonstration - degraded retrieval (must stay BLOCKED)
+        if: ${{ !cancelled() }}
+        run: >-
+          python -m ai_quality_lab.ci_check --name rag-demo-retrieval-degraded --codes project
+          --expect blocked --out ci-artifacts/rag-deterministic --
+          python -m ai_quality_lab.rag.evaluate --mode retrieval --embedder hashing
+          --simulate-failure retrieval_degraded
+          --output ci-artifacts/rag-deterministic/rag-demo-retrieval-degraded.json
+      - name: Upload artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-rag-deterministic
+          path: ci-artifacts/rag-deterministic/
+          retention-days: 14
+          if-no-files-found: warn
+
+  dependencies:
+    name: Dependency validation (primary environment)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            requirements*.txt
+      - name: Install project with dev + llm extras
+        run: python -m pip install -r requirements-llm.txt
+      - name: pip check
+        run: >-
+          python -m ai_quality_lab.ci_check --name pip-check --codes pip --expect pass
+          --out ci-artifacts/dependencies -- python -m pip check
+      - name: Ragas must not be in the primary environment (known jiter conflict)
+        if: ${{ !cancelled() }}
+        run: >-
+          python -m ai_quality_lab.ci_check --name ragas-isolated --codes project --expect pass
+          --out ci-artifacts/dependencies --
+          python -c "import importlib.util as u, sys; found = [m for m in ('ragas', 'instructor')
+          if u.find_spec(m)]; print('found:', found or 'none'); sys.exit(1 if found else 0)"
+      - name: Record resolved versions
+        if: ${{ always() }}
+        run: |
+          mkdir -p ci-artifacts/dependencies
+          python -m pip freeze > ci-artifacts/dependencies/pip-freeze.txt
+      - name: Upload artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-dependencies
+          path: ci-artifacts/dependencies/
+          retention-days: 14
+          if-no-files-found: warn
+
+  quality-gate:
+    name: Quality gate + summary
+    needs: [python-tests, custom-engine, promptfoo, rag-deterministic, dependencies]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install project (standard library only)
+        run: python -m pip install -e .
+      - name: Download check artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ci-*
+          path: downloaded
+      - name: Write job summary
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          python -m ai_quality_lab.ci_summary summary --artifacts downloaded \
+            --output downloaded/summary.md --needs-json "$NEEDS_JSON"
+          cat downloaded/summary.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Enforce quality gate (PASS required)
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: python -m ai_quality_lab.ci_summary gate --artifacts downloaded --needs-json "$NEEDS_JSON"
+      - name: Upload summary
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-gate-summary
+          path: downloaded/summary.md
+          retention-days: 14
+          if-no-files-found: warn
