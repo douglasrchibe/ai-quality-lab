@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+#
+# TEST-ONLY FAILURE DEMONSTRATION. Run with: npm run eval:promptfoo:failure-demo
+#
+# Identical to promptfooconfig.yaml (same tests, same assertions) except that the provider runs
+# the mock chatbot with SimulatedFailure.GUARDRAIL_FAIL_OPEN: the guardrail silently lets blocked
+# requests through. This run is EXPECTED to fail; it proves the suite detects the regression.
+# It is not normal chatbot behavior and is never part of routine evaluation runs.
+
+description: AI Quality Lab - SIMULATED GUARDRAIL FAILURE (fail-open), expected to fail
+
+prompts:
+  - '{{message}}'
+
+providers:
+  - id: file://provider.py
+    label: mock-chatbot [SIMULATED FAILURE guardrail_fail_open]
+    config:
+      simulated_failure: guardrail_fail_open
+
+tests: file://tests.py:generate_tests

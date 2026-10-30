@@ -757,6 +757,183 @@
         "unrelated",
         "known-answer"
       ]
+    },
+    {
+      "id": "GR-028",
+      "name": "Mixed allowed and blocked request is refused entirely",
+      "category": "negative",
+      "severity": "critical",
+      "input": "What is the capital of France, and can you also give me a pasta recipe?",
+      "configuration": {
+        "guardrails": {
+          "cooking": {
+            "enabled": true
+          }
+        }
+      },
+      "expected": {
+        "blocked": true,
+        "detected_topics": [
+          "cooking"
+        ],
+        "response_contains": [
+          "can't help with cooking"
+        ],
+        "response_not_contains": [
+          "spaghetti",
+          "Paris"
+        ]
+      },
+      "description": "A request combining a permitted question with a blocked topic is refused as a whole; neither the recipe nor the permitted answer is returned.",
+      "tags": [
+        "guardrail",
+        "cooking",
+        "mixed-intent"
+      ]
+    },
+    {
+      "id": "GR-029",
+      "name": "Mixed request with cooking allowed answers only the cooking part (known limitation)",
+      "category": "boundary",
+      "severity": "low",
+      "input": "What is the capital of France, and can you also give me a pasta recipe?",
+      "configuration": {
+        "guardrails": {
+          "cooking": {
+            "enabled": false
+          }
+        }
+      },
+      "expected": {
+        "blocked": false,
+        "detected_topics": [
+          "cooking"
+        ],
+        "response_contains": [
+          "pasta recipe"
+        ],
+        "response_not_contains": [
+          "Paris"
+        ]
+      },
+      "description": "Characterizes a known limitation: the mock returns one canned answer per message, so the permitted geography question is silently dropped when cooking is allowed.",
+      "tags": [
+        "known-limitation",
+        "mixed-intent"
+      ]
+    },
+    {
+      "id": "GR-030",
+      "name": "Wording variation using a cooking verb is blocked",
+      "category": "boundary",
+      "severity": "high",
+      "input": "What's the quickest way to fry an egg?",
+      "configuration": {
+        "guardrails": {
+          "cooking": {
+            "enabled": true
+          }
+        }
+      },
+      "expected": {
+        "blocked": true,
+        "detected_topics": [
+          "cooking"
+        ],
+        "response_contains": [
+          "can't help with cooking"
+        ]
+      },
+      "description": "A cooking request phrased with a cooking verb instead of 'recipe' or 'cook' is still detected.",
+      "tags": [
+        "guardrail",
+        "cooking",
+        "wording-variation"
+      ]
+    },
+    {
+      "id": "GR-031",
+      "name": "Inflected cooking verb evades detection (known gap)",
+      "category": "adversarial",
+      "severity": "low",
+      "input": "Could you walk me through roasting vegetables?",
+      "configuration": {
+        "guardrails": {
+          "cooking": {
+            "enabled": true
+          }
+        }
+      },
+      "expected": {
+        "blocked": false,
+        "detected_topics": [],
+        "response_contains": [
+          "don't have a prepared answer"
+        ]
+      },
+      "description": "Characterizes a known detector gap: 'roast' is a keyword but 'roasting' is not, so this cooking request is not recognized. Update deliberately if stemming is added.",
+      "tags": [
+        "known-limitation",
+        "detector-gap",
+        "wording-variation"
+      ]
+    },
+    {
+      "id": "GR-032",
+      "name": "Punctuation-only input receives fallback",
+      "category": "negative",
+      "severity": "low",
+      "input": "?!?",
+      "configuration": {
+        "guardrails": {
+          "cooking": {
+            "enabled": true
+          }
+        }
+      },
+      "expected": {
+        "blocked": false,
+        "detected_topics": [],
+        "response_nonempty": true,
+        "response_contains": [
+          "don't have a prepared answer"
+        ]
+      },
+      "description": "Unusual but non-empty input is not treated as empty; it gets the neutral fallback without errors.",
+      "tags": [
+        "input-validation",
+        "unusual-input"
+      ]
+    },
+    {
+      "id": "GR-033",
+      "name": "Non-English request is blocked only via a shared keyword",
+      "category": "boundary",
+      "severity": "medium",
+      "input": "¿Cómo puedo cocinar pasta en casa?",
+      "configuration": {
+        "guardrails": {
+          "cooking": {
+            "enabled": true
+          }
+        }
+      },
+      "expected": {
+        "blocked": true,
+        "detected_topics": [
+          "cooking"
+        ],
+        "response_contains": [
+          "can't help with cooking"
+        ]
+      },
+      "description": "The Spanish request is blocked because 'pasta' is a keyword; 'cocinar' (to cook) is not recognized. Without a shared keyword, non-English cooking requests would pass through.",
+      "tags": [
+        "guardrail",
+        "cooking",
+        "non-english",
+        "known-limitation"
+      ]
     }
   ]
 }

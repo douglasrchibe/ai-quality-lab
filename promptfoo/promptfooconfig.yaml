@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+#
+# Promptfoo suite for the mock chatbot (normal configuration). Run with: npm run eval:promptfoo
+#
+# - No LLM provider is used. The only provider is a local Python adapter around MockChatbot.
+# - Tests are generated from evals/guardrail_cases.json, the same dataset the custom engine uses.
+# - Assertions: is-json schema + guardrail-consistency invariant on every test, then per-case
+#   checks (blocked status, detected topics, required/prohibited phrases, non-empty response).
+
+description: AI Quality Lab - mock chatbot guardrails (normal configuration)
+
+# The message is passed to the provider as a var; the prompt template just renders it.
+prompts:
+  - '{{message}}'
+
+providers:
+  - id: file://provider.py
+    label: mock-chatbot
+
+tests: file://tests.py:generate_tests

@@ -10,6 +10,9 @@ __pycache__/
 build/
 dist/
 
+# --- Node.js (Promptfoo) ---
+node_modules/
+
 # --- Test / tooling caches ---
 .pytest_cache/
 .coverage

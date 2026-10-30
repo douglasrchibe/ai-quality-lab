@@ -1,0 +1,19 @@
+{
+  "name": "ai-quality-lab",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Node.js tooling for AI Quality Lab (Promptfoo). The Python package is defined in pyproject.toml.",
+  "engines": {
+    "node": ">=22.22.0"
+  },
+  "scripts": {
+    "promptfoo": "node promptfoo/run.mjs",
+    "promptfoo:validate": "node promptfoo/run.mjs validate config -c promptfoo/promptfooconfig.yaml promptfoo/promptfooconfig.failure-demo.yaml",
+    "eval:promptfoo": "node promptfoo/run.mjs eval -c promptfoo/promptfooconfig.yaml --no-cache --no-share -o reports/promptfoo/results.json",
+    "eval:promptfoo:failure-demo": "node promptfoo/run.mjs eval -c promptfoo/promptfooconfig.failure-demo.yaml --no-cache --no-share -o reports/promptfoo/failure-demo-results.json",
+    "promptfoo:view": "node promptfoo/run.mjs view"
+  },
+  "devDependencies": {
+    "promptfoo": "0.125.1"
+  }
+}

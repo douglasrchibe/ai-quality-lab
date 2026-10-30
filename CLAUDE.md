@@ -12,13 +12,15 @@ quality gates. This is a learning/portfolio project for AI-evaluation QA automat
 ## Technology choices
 
 - **Python 3.12+**, standard library first.
-- **pytest** is the only dev dependency. There are no runtime dependencies.
+- **pytest** is the only Python dev dependency. There are no runtime dependencies.
+- **Promptfoo** (Node.js, pinned exactly in `package.json`, lockfile committed) is the only
+  Node dependency. Install with `npm ci`; run only through the npm scripts / `promptfoo/run.mjs`.
 - **src layout** (`src/ai_quality_lab/`), installed editable via `pip install -r requirements.txt`.
 - **pyproject.toml** is the single source of truth for metadata, dependencies, and pytest config.
   `requirements.txt` only contains `-e .[dev]`.
 - Eval cases are **data** (`evals/*.json`), kept separate from test code.
-- Out of scope unless explicitly approved: real LLMs, paid APIs, Promptfoo/DeepEval, databases,
-  Docker, cloud services, web UIs, autonomous agents.
+- Out of scope unless explicitly approved: real LLMs, paid APIs, LLM-as-a-judge, DeepEval, Ragas,
+  databases, Docker, cloud services, custom web UIs, autonomous agents, CI workflows.
 
 ## Layout
 
@@ -29,9 +31,13 @@ quality gates. This is a learning/portfolio project for AI-evaluation QA automat
 | `src/ai_quality_lab/dataset.py` | Eval dataset schema, loading, validation (`EvalCase`, `Severity`, `Category`) |
 | `src/ai_quality_lab/evaluator.py` | Deterministic assertions, `CaseResult`, `summarize()`, release readiness |
 | `src/ai_quality_lab/runner.py` | `Agent` protocol, `run_evaluation_suite()`, CLI (`python -m ai_quality_lab.runner`) |
-| `src/ai_quality_lab/reporting.py` | Placeholder: report files and baselines (Phase 4) |
+| `src/ai_quality_lab/promptfoo_adapter.py` | Promptfoo Python provider (`call_api`) and dataset-to-Promptfoo test conversion |
+| `src/ai_quality_lab/engine_comparison.py` | Compares a Promptfoo results file with the custom engine, case by case |
+| `src/ai_quality_lab/reporting.py` | Placeholder: report files and baselines (Phase 5) |
 | `tests/` | pytest tests, one file per module + `test_setup.py`; shared fixtures in `conftest.py` |
-| `evals/guardrail_cases.json` | Evaluation dataset (schema documented in `dataset.py` and README) |
+| `evals/guardrail_cases.json` | Evaluation dataset shared by both engines (schema in `dataset.py` and README) |
+| `promptfoo/` | Promptfoo configs (normal + failure demo), thin Python shims, `assertions.js`, `run.mjs` launcher |
+| `docs/promptfoo-comparison.md` | Custom engine vs. Promptfoo comparison and run results |
 | `reports/` | Generated output, git-ignored except `.gitkeep` and `reports/baselines/` |
 
 ## Coding standards
@@ -87,8 +93,9 @@ A milestone is done only when **all** of the following are true:
 | 1 | Environment, structure, docs, setup test | Done |
 | 2 | Mock chatbot with configurable guardrails | Done |
 | 3 | Evaluation engine: dataset, runner, assertions, summary, release readiness | Done |
-| 4 | Report files (JSON/Markdown) + regression comparison vs baseline | Planned |
-| 5 | CI pipeline with quality gates | Planned |
+| 4 | Promptfoo integration on the shared dataset + engine comparison | Done |
+| 5 | Persistent reports + regression comparison vs baseline | Planned |
+| 6 | CI pipeline with quality gates | Planned |
 
 ## Evaluation engine rules (Phase 3)
 
@@ -143,3 +150,18 @@ A milestone is done only when **all** of the following are true:
   blocked, allowed, and unrelated prompts across both config states.
 - AC14: All tests pass via `python -m pytest`. The existing setup tests still pass.
 - Out of scope for Phase 2: evaluator, runner, reporting, eval JSON population.
+
+## Promptfoo integration rules (Phase 4)
+
+- `evals/guardrail_cases.json` is the **single source of truth**. Never hand-write Promptfoo tests
+  that duplicate it; `promptfoo/tests.py` generates them. New scenarios go in the JSON.
+- The Promptfoo provider must call the real `MockChatbot`; never reimplement chatbot logic in
+  Python shims or JavaScript. Keep `promptfoo/*.py` as thin shims; logic and tests live in
+  `src/ai_quality_lab/promptfoo_adapter.py`.
+- Every Promptfoo run goes through `promptfoo/run.mjs` (telemetry/update/sharing disabled,
+  venv Python) with `--no-cache --no-share`. No LLM providers in Promptfoo configs.
+- The failure demo (`promptfooconfig.failure-demo.yaml`) is the only place `simulated_failure` may
+  appear in Promptfoo config; it is expected to exit 100 and must never run in routine checks.
+- After changing the dataset, adapter, or assertions, run `npm run eval:promptfoo`, the failure
+  demo, and `python -m ai_quality_lab.engine_comparison` on both results files; both must report
+  0 disagreements.

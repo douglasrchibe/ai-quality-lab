@@ -6,13 +6,15 @@ test cases, regression detection, quality metrics, reporting, and CI quality gat
 
 ## Current status
 
-**Phases 1–3 are complete.** Implemented so far:
+**Phases 1–4 are complete.** Implemented so far:
 - the project foundation
 - a deterministic mock chatbot
-- an evaluation engine that runs a JSON dataset of scenarios against the chatbot and prints a
-  summary with a release-readiness decision.
+- a custom evaluation engine that runs a JSON dataset of scenarios against the chatbot and prints
+  a summary with a release-readiness decision
+- a [Promptfoo](https://www.promptfoo.dev/) suite that evaluates the same chatbot from the same
+  dataset, plus a script that compares the two engines' outcomes case by case.
 
-Still **planned**: report files in `reports/`, baseline comparison, and CI integration. The
+Still **planned**: persistent report files and baseline comparison, and CI integration. The
 `reporting.py` module is a placeholder.
 
 ## Prerequisites
@@ -20,6 +22,8 @@ Still **planned**: report files in `reports/`, baseline comparison, and CI integ
 - Windows with PowerShell
 - Python 3.12+ (`py --list` to check)
 - Git
+- Node.js 22.22+ (Node.js 24 LTS recommended), only for the Promptfoo suite. Check with
+  `node --version`; install from https://nodejs.org or `winget install OpenJS.NodeJS.LTS`.
 - No LLM, API key, database, Docker, or cloud service is required.
 
 ## Setup (Windows PowerShell)
@@ -30,10 +34,12 @@ From the project root:
 py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
+npm ci            # installs the pinned Promptfoo version from package-lock.json into node_modules/
 ```
 
 `requirements.txt` installs this package in editable mode plus dev tools (pytest), as declared in
-`pyproject.toml`.
+`pyproject.toml`. `npm ci` installs Promptfoo locally. Nothing is installed globally. Skip
+`npm ci` if you only use the Python engine.
 
 ### Activating the virtual environment
 
@@ -53,8 +59,10 @@ python -m pytest
 ```
 
 Run a single module's tests by naming the file, e.g. `python -m pytest tests/test_mock_agent.py`.
-Test files: `test_mock_agent.py`, `test_dataset.py`, `test_evaluator.py`, `test_runner.py`, and
-`test_setup.py`.
+Test files: `test_mock_agent.py`, `test_dataset.py`, `test_evaluator.py`, `test_runner.py`,
+`test_promptfoo_adapter.py`, `test_engine_comparison.py`, and `test_setup.py`. A few tests in
+`test_promptfoo_adapter.py` run the JavaScript assertion helpers with Node.js. If Node.js is
+missing, they are reported as skipped.
 
 ## The mock chatbot
 
@@ -277,10 +285,12 @@ whole dataset passes against the healthy chatbot.
 
 ### Current dataset
 
-The dataset has 27 cases across all five categories:
+The dataset has 33 cases across all five categories:
 - **Positive:** allowed and blocked flows.
-- **Negative:** refusals don't leak recipe content; empty input; fallback.
-- **Boundary:** case, whitespace, keywords embedded in sentences, food mentions, word boundaries.
+- **Negative:** refusals don't leak recipe content; mixed allowed + blocked requests; empty,
+  whitespace and punctuation-only input; fallback.
+- **Boundary:** case, whitespace, keywords embedded in sentences, food mentions, word boundaries,
+  wording variations, non-English input.
 - **Adversarial:** override, jailbreak and "guardrail is off" claims; hypothetical framing.
 - **Regression:** unrelated behavior is unaffected by the setting; multi-topic configuration.
 
@@ -289,6 +299,9 @@ mistakes. These are characterization tests:
 - GR-015: "I had pasta for lunch today." is blocked.
 - GR-017: "Cook Islands" is blocked.
 - GR-022: "How do I make carbonara?" is *not* blocked.
+- GR-029: a mixed request with cooking allowed returns only the recipe and drops the other question.
+- GR-031: "roasting" is *not* detected (only "roast" is a keyword).
+- GR-033: a Spanish request is blocked only because "pasta" happens to be a keyword.
 
 If detection improves, these cases should fail and be updated deliberately.
 
@@ -300,13 +313,163 @@ If detection improves, these cases should fail and be updated deliberately.
   not implemented yet.
 - The keyword detector's limitations (above) are inherited by every guardrail scenario.
 
+## Phase 4: Promptfoo integration
+
+### What Promptfoo is and why it's here
+
+[Promptfoo](https://www.promptfoo.dev/) is an open-source CLI for evaluating LLM applications.
+You declare prompts, providers (the system under test) and test cases with assertions in YAML.
+Promptfoo runs them and reports results in a terminal table, JSON, HTML or a local web viewer.
+
+This project uses it to compare a widely used evaluation tool with the custom engine from
+Phase 3, on **the same chatbot and the same scenarios**. No LLM is involved. The only "provider" is
+a local Python adapter around `MockChatbot`.
+
+### How it fits together
+
+```
+evals/guardrail_cases.json  (single source of truth: 33 cases)
+   |                                   |
+   | load_dataset()                    | promptfoo/tests.py:generate_tests
+   v                                   v
+custom engine (runner.py)       Promptfoo (promptfoo/promptfooconfig.yaml)
+   |                                   | provider: promptfoo/provider.py -> call_api()
+   v                                   v
+MockChatbot  <------- same class, same configuration per case ------->  MockChatbot
+```
+
+- **Adapter** ([promptfoo_adapter.py](src/ai_quality_lab/promptfoo_adapter.py)): `call_api()` is
+  a Promptfoo Python provider.
+  - It builds a real `MockChatbot` from the test's `configuration` var and sends the `message` var.
+  - It returns the reply as a JSON string with the same three fields the custom engine judges:
+    `{"response", "blocked", "detected_topics"}`.
+  - Invalid configuration comes back as a Promptfoo **error**, never as an output.
+  - `promptfoo/provider.py` and `promptfoo/tests.py` are three-line shims that import from the
+    package, so the logic stays unit-tested.
+- **Shared dataset:** `generate_tests()` converts every case in `evals/guardrail_cases.json` into
+  a Promptfoo test at run time. There is no second dataset to keep in sync. A new case added to the
+  JSON is picked up by both engines.
+- **Assertions**, per Promptfoo test:
+
+  | Promptfoo assertion | Metric name | Custom-engine equivalent |
+  |---|---|---|
+  | `is-json` with a JSON schema | `structured_output` | the runner's agent-contract check (a violation is an ERROR there) |
+  | `javascript` `guardrailConsistency` | `guardrail_consistency` | none: Promptfoo-only invariant (see below) |
+  | `javascript` `blockedStatus` | `blocked_status` | `blocked` |
+  | `javascript` `detectedTopics` | `detected_topics` | `detected_topics` |
+  | `javascript` `responseNonempty` | `nonempty_response` | `response_nonempty` |
+  | `icontains` on `JSON.parse(output).response` | `required_phrase` | `response_contains` |
+  | `not-icontains` on `JSON.parse(output).response` | `prohibited_phrase` | `response_not_contains` |
+
+  The JavaScript helpers are in [promptfoo/assertions.js](promptfoo/assertions.js). Each one returns
+  a `reason` such as `blocked: expected true, actual false - the guardrail did not prevent the
+  request`. A refusal phrase alone never makes a case pass: blocked cases also assert `blocked: true`
+  and that recipe text is **absent**.
+
+  `guardrailConsistency` is an extra invariant applied to every test. A reply must be blocked
+  exactly when a topic the agent detected is enabled in that test's configuration. It catches a
+  fail-open guardrail even in a case that doesn't assert `blocked`. It relies on the agent's own
+  `detected_topics`, so it can't catch a detector that misses a topic.
+
+### Running it (Windows PowerShell, from the project root)
+
+```powershell
+npm ci                                  # once: install pinned Promptfoo (0.125.1)
+npm run promptfoo:validate              # check both Promptfoo config files
+npm run eval:promptfoo                  # normal run   -> reports/promptfoo/results.json
+npm run promptfoo:view                  # optional: browse results in a local web UI
+python -m ai_quality_lab.runner         # the custom engine, same dataset
+python -m ai_quality_lab.engine_comparison reports/promptfoo/results.json
+```
+
+The npm scripts call [promptfoo/run.mjs](promptfoo/run.mjs). This small launcher runs the
+**locally installed** Promptfoo with these settings:
+- `PROMPTFOO_PYTHON` set to `.venv\Scripts\python.exe`, so the provider can import `ai_quality_lab`
+- telemetry, update checks, sharing and remote generation disabled
+- `--no-cache` and `--no-share` on every eval
+
+Promptfoo keeps its local eval history in `%USERPROFILE%\.promptfoo`.
+
+**Exit codes for `npm run eval:promptfoo`:** 0 if every test passes, **100** if any test fails *or
+errors*, and 1 for other errors. npm adds its own "Lifecycle script failed" message on a non-zero
+code.
+
+### Reproducing the guardrail failure (test-only)
+
+```powershell
+npm run eval:promptfoo:failure-demo     # EXPECTED to fail: exit code 100
+python -m ai_quality_lab.engine_comparison reports/promptfoo/failure-demo-results.json
+```
+
+[promptfooconfig.failure-demo.yaml](promptfoo/promptfooconfig.failure-demo.yaml) is the normal
+config with one difference: the provider is configured with `simulated_failure:
+guardrail_fail_open`, which uses the Phase 2 `SimulatedFailure` switch. No production code changes,
+and no LLM is needed.
+
+The provider is labelled `[SIMULATED FAILURE guardrail_fail_open]` so it can't be mistaken for
+normal behaviour. The demo only runs when you call it explicitly, never as part of `npm run
+eval:promptfoo` or `pytest`.
+
+### Interpreting the results
+
+- **Terminal:** one row per test showing the message, the configuration and `[PASS]`/`[FAIL]` with
+  the output, followed by totals (passed / failed / errors).
+- **JSON** (`reports/promptfoo/*.json`, git-ignored):
+  - `results.results[]` has one row per test with `success`, `failureReason` (0 none, 1 assertion,
+    2 error) and `gradingResult.componentResults[]` (each assertion's `pass`, `reason`, `metric`).
+  - `testCase.metadata` carries the dataset's `case_id`, `category`, `severity` and `tags`.
+- **Web viewer** (`npm run promptfoo:view`): the same data, filterable, with the named metrics
+  aggregated.
+- **Comparison script** (`engine_comparison`):
+  - It runs the custom engine in the same simulated-failure mode that Promptfoo used (read from
+    the results file).
+  - It prints both outcomes per case with each side's failed checks, and Promptfoo's failures
+    grouped by the dataset's severity.
+  - It exits **0** only if both engines agree on every case. Agreement doesn't prove the engines
+    are equivalent; see [docs/promptfoo-comparison.md](docs/promptfoo-comparison.md).
+
+### Current results (Promptfoo 0.125.1)
+
+| Run | Custom engine | Promptfoo | Agreement |
+|---|---|---|---|
+| Normal | 33 PASS, READY | 33 passed, exit 0 | 33/33 |
+| `guardrail_fail_open` demo | 17 PASS, 16 FAIL (9 critical), BLOCKED | 17 passed, 16 failed, exit 100 | 33/33 |
+
+### Limitations
+
+- **Promptfoo has no severity or release-readiness concept.** Any failure or error gives exit
+  code 100. Severity is carried as metadata only. (`PROMPTFOO_PASS_RATE_THRESHOLD` can relax this
+  to a pass-rate threshold, but it still treats every case equally.)
+- **Promptfoo doesn't separate errors from failures in its exit code.** The custom engine does.
+- **Phrase matching differs slightly.**
+  - `icontains` is case-insensitive but does **not** collapse whitespace, while the custom engine
+    does. Today's phrases and responses use single spaces, so the results are identical.
+  - Case folding differs: JavaScript lowercasing vs Python `casefold`.
+- **The Promptfoo suite needs Node.js plus the Python venv**, and starts a Python worker process.
+- **`npm audit` reports 5 high-severity advisories** in Promptfoo's transitive dependencies (at
+  install time, 2026-10-30). Promptfoo runs only locally against a local provider. Don't apply
+  `npm audit fix --force`, because it may make breaking upgrades.
+- **The keyword detector and mock limitations above apply to both engines equally.** Matching
+  results mean they agree about the mock, not that the chatbot is good.
+
+### Phase 5 (planned)
+
+Planned next, and subject to change:
+- write evaluation results to `reports/` as persistent JSON/Markdown files
+- keep a reviewed baseline in `reports/baselines/` and flag regressions against it
+- later, run both suites in CI as quality gates
+
 ## Project layout
 
 ```
-src/ai_quality_lab/   package: mock_agent, guardrails, dataset, evaluator, runner, reporting (placeholder)
+src/ai_quality_lab/   package: mock_agent, guardrails, dataset, evaluator, runner,
+                      promptfoo_adapter, engine_comparison, reporting (placeholder)
 tests/                pytest unit and integration tests
-evals/                evaluation dataset (JSON)
-reports/              generated reports (git-ignored)
+evals/                evaluation dataset (JSON), shared by both engines
+promptfoo/            Promptfoo configs, provider/test-generator shims, JS assertions, launcher
+docs/                 promptfoo-comparison.md
+reports/              generated output (git-ignored)
+package.json          Node.js tooling: pinned Promptfoo + npm scripts (lockfile committed)
 ```
 
 ## Milestones
@@ -316,7 +479,8 @@ reports/              generated reports (git-ignored)
 | 1 | Environment, structure, docs, setup test | Done |
 | 2 | Mock chatbot with configurable guardrails and a deliberate failure mode | Done |
 | 3 | Evaluation engine: dataset schema/validation, runner, assertions, summary, release readiness | Done |
-| 4 | Reports (JSON/Markdown files) and regression comparison against a baseline | Planned |
-| 5 | CI pipeline with quality gates | Planned |
+| 4 | Promptfoo integration on the shared dataset + engine comparison | Done |
+| 5 | Persistent reports and regression comparison against a baseline | Planned |
+| 6 | CI pipeline with quality gates | Planned |
 
 Milestone acceptance criteria are documented in [CLAUDE.md](CLAUDE.md).
