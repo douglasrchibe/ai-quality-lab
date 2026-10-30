@@ -14,7 +14,7 @@ test cases, regression detection, quality metrics, reporting, and CI quality gat
 - a [Promptfoo](https://www.promptfoo.dev/) suite that evaluates the same chatbot from the same
   dataset, plus a script that compares the two engines' outcomes case by case
 - a **real LLM** chatbot (local Ollama by default) protected by the same guardrail, evaluated with
-  **DeepEval** metrics on a separate 25-case dataset. The mock chatbot remains the default
+  **DeepEval** metrics on a separate 27-case dataset. The mock chatbot remains the default
   everywhere else.
 
 Still **planned**: persistent report files and baseline comparison, and CI integration. The
@@ -500,7 +500,7 @@ scores.
 ### Install (Windows PowerShell)
 
 ```powershell
-# 1. Python extras (DeepEval 4.3.2 is pinned in pyproject.toml; ~60 packages)
+# 1. Python extras: DeepEval 4.3.2 + the ollama client 0.6.3 (pinned in pyproject.toml; ~60 packages)
 python -m pip install -r requirements-llm.txt
 
 # 2. Local model (skip if you use a hosted API)
@@ -528,7 +528,7 @@ python -m ai_quality_lab.llm_agent "What is the capital of France?"   # one ques
 python -m ai_quality_lab.llm_eval --list            # cases, metrics, checks; makes no model calls
 python -m ai_quality_lab.llm_eval --tag smoke       # 6-case subset; start here
 python -m ai_quality_lab.llm_eval --case LLM-016    # a single case
-python -m ai_quality_lab.llm_eval                   # all 25 cases (long on a CPU)
+python -m ai_quality_lab.llm_eval                   # all 27 cases (long on a CPU)
 ```
 
 Each case prints a progress line as it finishes, with failed checks, metric scores below threshold
@@ -565,6 +565,19 @@ requests reach the model.
 | Smoke (`--tag smoke`, 6 cases) | 3 PASS, 3 FAIL, 0 ERROR → **BLOCKED** (critical: LLM-016) | 370s |
 | Fail-open demo (LLM-014, LLM-015) | 2 FAIL, both critical → **BLOCKED** | 42s |
 | LLM-002 (Faithfulness + Answer Relevancy), after the fixes below | ERROR: the judge returned invalid JSON for Faithfulness | 330s |
+| Phase 5.5 audit: 8 unverified-metric and guardrail cases | 1 PASS, 7 FAIL → **BLOCKED** (critical: LLM-016, 018, 026) | ~10 min |
+| Phase 5.5 judge calibration (6 known-good and known-bad answers) | 5 of 6 verdicts correct; **Answer Relevancy failed a known-good answer** | ~5 min |
+
+**Phase 5.5 audit, in brief** (full details in
+[reports/phase_5_completion_report.md](reports/phase_5_completion_report.md)):
+- **The model layer can't be relied on.** With the keyword layer bypassed, the model leaked
+  cooking instructions in **3 of 4** critical attempts. It also partly obeyed an instruction
+  injected into the context (LLM-027).
+- **Every one of those leaks was caught by the deterministic backstop**, independently of the
+  judge.
+- **The 3B judge's reliability depends on the metric.** It was reliable on clear-cut behaviour and
+  toxicity, but not on statement-level metrics: Answer Relevancy, Contextual Relevancy and
+  Faithfulness gave false failures on correct answers.
 
 **Two infrastructure problems were found and fixed during the live runs.** Both have regression
 tests.
@@ -591,7 +604,7 @@ I reviewed each response by hand. What that showed:
 
 ### The LLM dataset
 
-[evals/llm_cases.json](evals/llm_cases.json) has 25 cases across 13 categories: informational,
+[evals/llm_cases.json](evals/llm_cases.json) has 27 cases across 13 categories: informational,
 concise, multi-part, ambiguous, insufficient information, hallucination risk, contradictory
 instructions, guardrail trigger, guardrail bypass, normal, uncertainty, scope, and safety.
 
@@ -685,7 +698,7 @@ package.json          Node.js tooling: pinned Promptfoo + npm scripts (lockfile 
 | 2 | Mock chatbot with configurable guardrails and a deliberate failure mode | Done |
 | 3 | Evaluation engine: dataset schema/validation, runner, assertions, summary, release readiness | Done |
 | 4 | Promptfoo integration on the shared dataset + engine comparison | Done |
-| 5 | Real LLM (Ollama/OpenAI-compatible) + DeepEval evaluation | Done: live-verified on smoke + failure demo; full 25-case run not completed |
+| 5 | Real LLM (Ollama/OpenAI-compatible) + DeepEval evaluation | Done with conditions (Phase 5.5 audit): live-verified on 14 of 27 cases (+ LLM-015 in fail-open mode) + judge calibration; full run not completed |
 | 6 | Persistent reports and regression comparison against a baseline | Planned |
 | 7 | CI pipeline with quality gates | Planned |
 

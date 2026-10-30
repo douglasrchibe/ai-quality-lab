@@ -109,7 +109,7 @@ Lessons:
 ## Cost and time
 
 - **Local (Ollama):** no fee. On a CPU-only laptop each model call takes seconds to over a minute.
-  Each metric makes about 2–4 judge calls, so the full 25-case run (27 metric evaluations) is
+  Each metric makes about 2–4 judge calls, so the full 27-case run (29 metric evaluations) is
   long. Start with `--tag smoke`.
 - **Hosted (OpenAI-compatible):** priced per token. A full run is roughly 25 chatbot calls plus a
   few hundred short judge calls. With a small model that's typically cents to well under US$1 per
@@ -123,7 +123,7 @@ Lessons:
   Those aren't implemented yet.
 - **Judge reliability.** By default the same small model answers and grades. That self-grading is
   biased and noisier than a stronger, separate judge (configure `AIQL_JUDGE_*`).
-- **Coverage.** 25 cases illustrate each category; they aren't a statistically meaningful sample of
+- **Coverage.** 27 cases illustrate each category; they aren't a statistically meaningful sample of
   user traffic.
 - **Keyword guardrail gaps** (see the guardrail dataset's `known-limitation` cases) now matter:
   anything they miss depends entirely on the model layer.

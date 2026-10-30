@@ -17,8 +17,11 @@ dev = [
     "pytest>=8.3",
 ]
 # Phase 5: DeepEval for LLM evaluation. Pinned exactly; it pulls in ~60 transitive packages.
+# `ollama` is required by DeepEval's OllamaModel (the default local judge) but is not a
+# dependency of deepeval itself.
 llm = [
     "deepeval==4.3.2",
+    "ollama==0.6.3",
 ]
 
 [tool.setuptools.packages.find]
@@ -31,6 +34,11 @@ testpaths = ["tests"]
 # -p no:deepeval / no:asyncio: DeepEval installs pytest plugins that auto-load into every run; this
 # suite uses neither (DeepEval evaluations run via `python -m ai_quality_lab.llm_eval`).
 addopts = "-ra --strict-markers -p no:deepeval -p no:asyncio"
+filterwarnings = [
+    # DeepEval 4.x notice that Hallucination/Toxicity/Bias now score "higher is better";
+    # METRIC_THRESHOLDS already uses that direction (also filtered at runtime in llm_eval).
+    "ignore:.*now scores in the same direction:DeprecationWarning",
+]
 markers = [
     "setup: environment and packaging sanity checks",
     "live_llm: calls a real LLM (Ollama/OpenAI); skipped unless AIQL_RUN_LIVE_TESTS=1",

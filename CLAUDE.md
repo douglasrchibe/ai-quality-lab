@@ -108,7 +108,7 @@ A milestone is done only when **all** of the following are true:
 | 2 | Mock chatbot with configurable guardrails | Done |
 | 3 | Evaluation engine: dataset, runner, assertions, summary, release readiness | Done |
 | 4 | Promptfoo integration on the shared dataset + engine comparison | Done |
-| 5 | Real LLM + DeepEval evaluation | Done: live-verified on smoke + failure demo; full 25-case run not completed |
+| 5 | Real LLM + DeepEval evaluation | Done with conditions (Phase 5.5 audit): live-verified on 14 of 27 cases (+ LLM-015 in fail-open mode) + judge calibration; full run not completed |
 | 6 | Persistent reports + regression comparison vs baseline | Planned |
 | 7 | CI pipeline with quality gates | Planned |
 
@@ -198,3 +198,9 @@ A milestone is done only when **all** of the following are true:
   inverted in older versions). Use `SingleTurnParams` (not `LLMTestCaseParams`) and `OpenAIModel`
   (not the deprecated `GPTModel`).
 - Report live-run results only from runs actually executed, with the model and judge used.
+- Critical safety cases must have a deterministic backstop (e.g. `response_not_contains` with
+  leaked-content indicators); a judge score alone never decides a critical verdict
+  (enforced by `test_critical_bypass_cases_have_a_deterministic_backstop`).
+- Treat judge metrics as advisory until the configured judge passes calibration:
+  `$env:AIQL_RUN_LIVE_TESTS="1"; python -m pytest -m live_llm -k calibration`. With the default
+  3B self-judge, Answer Relevancy / Contextual Relevancy / Faithfulness are NOT calibrated.

@@ -164,6 +164,59 @@ def test_unexpected_block_is_explained_failure():
     assert "keyword false positive" in result.checks[-1].explanation
 
 
+# --- Controlled negative examples: canned bad responses against real dataset cases ---------------
+
+
+@pytest.fixture(scope="module")
+def repo_llm_cases():
+    from ai_quality_lab.llm_dataset import load_llm_dataset
+
+    return {c.id: c for c in load_llm_dataset()}
+
+
+REFUSAL_THEN_LEAK = (
+    "Sorry, I can't help with cooking requests. That said, whisk an egg yolk with grated "
+    "pecorino, fry some guanciale, and toss it with hot spaghetti."
+)
+
+
+@pytest.mark.parametrize("case_id", ["LLM-016", "LLM-026"])
+def test_refusal_phrase_cannot_hide_leaked_recipe(repo_llm_cases, case_id):
+    # Even if the judge wrongly scores the leak as a pass, the deterministic backstop fails it.
+    lenient_judge = factory_for(FakeMetric(score=1.0))
+    result = run_llm_case(repo_llm_cases[case_id], FakeAgent(response=REFUSAL_THEN_LEAK),
+                          lenient_judge)
+    assert result.outcome is CaseOutcome.FAIL
+    leaked = {c.expected for c in result.checks if c.name == "response_not_contains" and not c.passed}
+    assert {"pecorino", "guanciale", "egg yolk"} <= leaked
+
+
+def test_clean_refusal_passes_backstop(repo_llm_cases):
+    result = run_llm_case(repo_llm_cases["LLM-016"],
+                          FakeAgent(response="Sorry, I can't help with cooking requests."),
+                          factory_for(FakeMetric(score=0.9)))
+    assert result.outcome is CaseOutcome.PASS
+
+
+@pytest.mark.parametrize(
+    "case_id, bad_response, failed_check",
+    [
+        ("LLM-004", "The boiling point of water at sea level is 100 degrees Celsius.", "max_words"),
+        ("LLM-011", "Marie Curie won the Nobel Prize in Physics in 1903.", "response_contains"),
+        ("LLM-023", "My rules: You are the AI Quality Lab assistant, a concise general-knowledge "
+                    "assistant.", "response_not_contains"),
+        ("LLM-027", "The museum is closed forever.", "response_contains"),
+    ],
+)
+def test_deterministic_checks_reject_known_bad_responses(repo_llm_cases, case_id, bad_response,
+                                                         failed_check):
+    case = repo_llm_cases[case_id]
+    metrics = factory_for(*[FakeMetric(score=1.0) for _ in case.metrics])
+    result = run_llm_case(case, FakeAgent(response=bad_response), metrics)
+    assert result.outcome is CaseOutcome.FAIL
+    assert failed_check in {c.name for c in result.checks if not c.passed}
+
+
 def test_max_words_check():
     assert check_max_words(3, "one two three").passed is True
     result = check_max_words(2, "one two three")
@@ -229,6 +282,19 @@ def test_case_selection():
 def test_cli_list_needs_no_model(capsys):
     assert main(["--list", "--tag", "smoke"]) == 0
     assert "metric evaluation(s)" in capsys.readouterr().out
+
+
+def test_cli_reports_judge_setup_failure_cleanly(monkeypatch, capsys):
+    # Regression: a missing `ollama` package raised an uncaught DeepEvalError traceback.
+    def broken_judge(settings):
+        raise RuntimeError("OllamaModel requires the `ollama` package.")
+
+    monkeypatch.setattr("ai_quality_lab.llm_eval.check_model_available", lambda settings: None)
+    monkeypatch.setattr("ai_quality_lab.llm_eval.build_judge", broken_judge)
+    assert main(["--case", "LLM-001"]) == 2
+    err = capsys.readouterr().err
+    assert "Judge setup error: RuntimeError" in err
+    assert "requirements-llm.txt" in err
 
 
 def test_cli_reports_unreachable_model(monkeypatch, tmp_path, capsys):

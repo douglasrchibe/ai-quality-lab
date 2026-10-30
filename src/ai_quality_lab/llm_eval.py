@@ -553,6 +553,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"DeepEval is not installed ({exc}). Run: python -m pip install -r "
               "requirements-llm.txt", file=sys.stderr)
         return 2
+    except Exception as exc:  # noqa: BLE001 - e.g. DeepEvalError when a judge dependency is missing
+        print(f"Judge setup error: {type(exc).__name__}: {exc}. If a package is missing, run: "
+              "python -m pip install -r requirements-llm.txt", file=sys.stderr)
+        return 2
 
     simulated_failure = SimulatedFailure(args.simulate_failure)
     print(f"Running {len(cases)} case(s): chatbot {chatbot_settings.label}, judge "

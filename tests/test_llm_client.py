@@ -5,6 +5,7 @@ HTTP behaviour is tested against a throwaway local server, so no real provider i
 
 import json
 import threading
+import time
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -31,6 +32,16 @@ def test_defaults_to_local_ollama():
         "ollama", DEFAULT_OLLAMA_MODEL, DEFAULT_OLLAMA_HOST
     )
     assert settings.api_key is None
+    assert settings.chat_completions_url == "http://localhost:11434/v1/chat/completions"
+
+
+@pytest.mark.parametrize(
+    "base_url", ["http://localhost:11434/v1", "http://localhost:11434/v1/", "http://localhost:11434/"]
+)
+def test_ollama_base_url_accepts_openai_compatible_form(base_url):
+    # Regression: ".../v1" used to become ".../v1/v1/chat/completions" and 404.
+    settings = LLMSettings.from_env({"AIQL_LLM_BASE_URL": base_url})
+    assert settings.base_url == "http://localhost:11434"
     assert settings.chat_completions_url == "http://localhost:11434/v1/chat/completions"
 
 
@@ -112,7 +123,7 @@ def test_missing_env_file_is_not_an_error(tmp_path):
 
 
 @contextmanager
-def fake_server(status=200, body=None, raw=None, routes=None):
+def fake_server(status=200, body=None, raw=None, routes=None, delay=0.0):
     """Serve canned responses; records each request as (path, headers, json body)."""
     requests = []
 
@@ -131,7 +142,11 @@ def fake_server(status=200, body=None, raw=None, routes=None):
         def do_POST(self):  # noqa: N802
             length = int(self.headers["Content-Length"])
             requests.append((self.path, dict(self.headers), json.loads(self.rfile.read(length))))
-            self._reply(status, raw if raw is not None else body)
+            time.sleep(delay)
+            try:
+                self._reply(status, raw if raw is not None else body)
+            except (BrokenPipeError, ConnectionResetError):
+                pass  # the client gave up (timeout test)
 
         def log_message(self, *args):
             pass
@@ -193,6 +208,13 @@ def test_unusable_bodies_raise_response_error(raw):
     with fake_server(raw=raw) as (url, _):
         with pytest.raises(LLMResponseError):
             OpenAICompatibleClient(ollama(url)).complete(MESSAGES)
+
+
+def test_slow_model_times_out_with_actionable_message():
+    with fake_server(body=CHAT_OK, delay=1.5) as (url, _):
+        settings = LLMSettings("ollama", "qwen2.5:3b", url, timeout_seconds=0.5)
+        with pytest.raises(LLMUnavailableError, match="did not answer within 0.5s"):
+            OpenAICompatibleClient(settings).complete(MESSAGES)
 
 
 def test_unreachable_ollama_explains_how_to_fix():

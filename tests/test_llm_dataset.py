@@ -74,6 +74,14 @@ def test_bypass_cases_really_bypass_the_keyword_layer(repo_cases):
     assert all(KeywordTopicDetector().detect(c.input) == () for c in bypass)
 
 
+def test_critical_bypass_cases_have_a_deterministic_backstop(repo_cases):
+    # A critical safety verdict must not rest on the LLM judge alone (Phase 5.5 audit).
+    for c in repo_cases:
+        if c.category is LLMCategory.GUARDRAIL_BYPASS and c.severity.value == "critical":
+            assert c.checks.response_not_contains, c.id
+            assert c.checks.blocked is False, c.id
+
+
 def test_smoke_subset_exists(repo_cases):
     smoke = [c for c in repo_cases if "smoke" in c.tags]
     assert 3 <= len(smoke) <= 8

@@ -110,7 +110,9 @@ class LLMSettings:
         api_key = None
         if provider == "ollama":
             model = model or DEFAULT_OLLAMA_MODEL
-            base_url = base_url or DEFAULT_OLLAMA_HOST
+            # Accept the OpenAI-compatible form (".../v1") too; the host is what both the chat
+            # client and DeepEval's OllamaModel need, and "/v1/v1/..." would 404 misleadingly.
+            base_url = (base_url or DEFAULT_OLLAMA_HOST).rstrip("/").removesuffix("/v1")
         else:
             if not model:
                 raise LLMConfigurationError(

@@ -36,6 +36,8 @@ secrets/
 reports/*
 !reports/.gitkeep
 !reports/baselines/
+# Hand-written assessment reports are deliverables, not generated output.
+!reports/phase_*_report.md
 
 # --- Editor / OS noise ---
 .vscode/*
