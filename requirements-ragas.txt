@@ -1,0 +1,6 @@
+# Phase 6 Ragas environment. Install into a SEPARATE virtual environment, never into .venv:
+#   py -3.12 -m venv .venv-ragas
+#   .\.venv-ragas\Scripts\python.exe -m pip install -r requirements-ragas.txt
+# Ragas 0.4.3 conflicts with the DeepEval environment (instructor pins jiter<0.15; openai 3.x
+# needs jiter>=0.16), so the two evaluation frameworks live in separate venvs.
+-e .[dev,ragas]

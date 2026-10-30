@@ -1,5 +1,6 @@
 # --- Virtual environments ---
 .venv/
+.venv-ragas/
 venv/
 env/
 
@@ -50,3 +51,6 @@ Desktop.ini
 
 # --- Claude Code local (per-user) settings ---
 .claude/settings.local.json
+
+# --- RAG vector indexes (rebuildable from data/knowledge_base) ---
+.rag_index/

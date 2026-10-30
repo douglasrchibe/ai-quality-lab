@@ -46,3 +46,13 @@ def make_case():
 @pytest.fixture
 def repo_dataset_path() -> Path:
     return REPO_DATASET
+
+
+REPO_KNOWLEDGE_BASE = Path(__file__).resolve().parents[1] / "data" / "knowledge_base"
+
+
+@pytest.fixture(scope="session")
+def repo_documents():
+    from ai_quality_lab.rag.documents import load_documents
+
+    return load_documents(REPO_KNOWLEDGE_BASE)

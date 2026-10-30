@@ -26,8 +26,12 @@ quality gates. This is a learning/portfolio project for AI-evaluation QA automat
 - Eval cases are **data** (`evals/*.json`), kept separate from test code.
 - Approved in Phase 5: a real LLM (local Ollama by default; OpenAI-compatible hosted optional)
   and DeepEval LLM-as-a-judge metrics.
-- Out of scope unless explicitly approved: making paid API calls on the user's behalf, Ragas,
-  databases, Docker, cloud services, custom web UIs, autonomous agents, CI workflows.
+- Approved in Phase 6: a local RAG pipeline (stdlib only), Ollama `nomic-embed-text` embeddings,
+  and Ragas 0.4.3 in a SEPARATE venv (`.venv-ragas`, `requirements-ragas.txt`). Ragas must never
+  be installed into `.venv` (instructor pins jiter<0.15; openai 3.x needs >=0.16).
+- Out of scope unless explicitly approved: making paid API calls on the user's behalf,
+  databases, hosted vector stores, Docker, cloud services, custom web UIs, autonomous agents,
+  CI workflows (Phase 7).
 
 ## Layout
 
@@ -44,7 +48,10 @@ quality gates. This is a learning/portfolio project for AI-evaluation QA automat
 | `src/ai_quality_lab/llm_agent.py` | `GuardedLLMChatbot` (keyword guardrail + model), CLI for one question |
 | `src/ai_quality_lab/llm_dataset.py` | Schema/validation for `evals/llm_cases.json` |
 | `src/ai_quality_lab/llm_eval.py` | DeepEval runner: judge, metrics, checks, summary, CLI |
-| `src/ai_quality_lab/reporting.py` | Placeholder: report files and baselines (Phase 6) |
+| `src/ai_quality_lab/rag/` | Phase 6 RAG: documents, chunking, embeddings, vector_store, index, retrieval, security, prompting, chatbot, mock_llm, dataset, retrieval_metrics, failures, evaluate, ragas_eval |
+| `data/knowledge_base/` | 16 synthetic documents (MAL-* adversarial, RES-001 restricted) |
+| `evals/rag_cases.json` | RAG ground truth (reference context, relevant doc IDs, facts) |
+| `src/ai_quality_lab/reporting.py` | Placeholder: report files and baselines (Phase 7) |
 | `tests/` | pytest tests, one file per module + `test_setup.py`; shared fixtures in `conftest.py` |
 | `evals/guardrail_cases.json` | Evaluation dataset shared by both engines (schema in `dataset.py` and README) |
 | `promptfoo/` | Promptfoo configs (normal + failure demo), thin Python shims, `assertions.js`, `run.mjs` launcher |
@@ -109,8 +116,8 @@ A milestone is done only when **all** of the following are true:
 | 3 | Evaluation engine: dataset, runner, assertions, summary, release readiness | Done |
 | 4 | Promptfoo integration on the shared dataset + engine comparison | Done |
 | 5 | Real LLM + DeepEval evaluation | Done with conditions (Phase 5.5 audit): live-verified on 14 of 27 cases (+ LLM-015 in fail-open mode) + judge calibration; full run not completed |
-| 6 | Persistent reports + regression comparison vs baseline | Planned |
-| 7 | CI pipeline with quality gates | Planned |
+| 6 | RAG + deterministic retrieval evaluation + advisory Ragas | Done (see reports/phase_6_completion_report.md) |
+| 7 | CI/CD quality gates, persistent reports and baselines | Planned |
 
 ## Evaluation engine rules (Phase 3)
 
@@ -204,3 +211,20 @@ A milestone is done only when **all** of the following are true:
 - Treat judge metrics as advisory until the configured judge passes calibration:
   `$env:AIQL_RUN_LIVE_TESTS="1"; python -m pytest -m live_llm -k calibration`. With the default
   3B self-judge, Answer Relevancy / Contextual Relevancy / Faithfulness are NOT calibrated.
+
+## RAG rules (Phase 6)
+
+- `ai_quality_lab/rag/` must stay standard-library only and must not import DeepEval or Ragas.
+  `ragas_eval.py` imports Ragas lazily and runs only in `.venv-ragas`; it reads the JSON written by
+  `rag.evaluate --mode rag`.
+- Retrieved documents are untrusted data. Keep the deterministic controls (classification filter,
+  sanitizer, output guard) in code; never rely on prompt wording alone, and never claim the
+  pattern-based controls stop every injection.
+- Ground truth = `reference_context` / `relevant_document_ids` / `expected_facts`. Retrieved context
+  is never ground truth. New reference passages must be verbatim sentences from the cited document
+  (`validate_against_corpus` enforces it).
+- Release gates are deterministic: critical FAIL, ERROR, retrieval gates (doc Hit Rate@K >= 0.9,
+  Recall@K >= 0.8), restricted retrieval. Ragas is ADVISORY and never changes readiness; do not
+  combine Ragas with deterministic metrics into one score. Do not tune gate thresholds to results.
+- Failure classes must cite deterministic evidence; unexplained failures are `evaluation_failure`.
+- Offline tests use `HashingEmbedder` and mock LLMs; live RAG tests are `live_llm` + opt-in.

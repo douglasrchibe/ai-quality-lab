@@ -6,7 +6,7 @@ test cases, regression detection, quality metrics, reporting, and CI quality gat
 
 ## Current status
 
-**Phases 1–5 are implemented.** So far:
+**Phases 1–6 are implemented.** So far:
 - the project foundation
 - a deterministic mock chatbot
 - a custom evaluation engine that runs a JSON dataset of scenarios against the chatbot and prints
@@ -16,6 +16,9 @@ test cases, regression detection, quality metrics, reporting, and CI quality gat
 - a **real LLM** chatbot (local Ollama by default) protected by the same guardrail, evaluated with
   **DeepEval** metrics on a separate 27-case dataset. The mock chatbot remains the default
   everywhere else.
+- a **RAG** chatbot over a 16-document synthetic knowledge base, with deterministic retrieval
+  metrics, prompt-injection defences, failure classification, release gates, and advisory Ragas
+  scores.
 
 Still **planned**: persistent report files and baseline comparison, and CI integration. The
 `reporting.py` module is a placeholder.
@@ -675,17 +678,133 @@ DeepEval installs pytest plugins that would load into every run. The project dis
 - Repeat LLM runs and report score variance.
 - Run the suites in CI as quality gates.
 
+## Phase 6: Retrieval-augmented generation (RAG) and its evaluation
+
+### What RAG is
+
+A RAG chatbot first **retrieves** relevant passages from a document collection, then asks the
+language model to answer **from those passages**. That makes answers traceable to sources, but it
+adds new ways to fail:
+- the right passage isn't retrieved
+- the model ignores the passage or invents something
+- a retrieved document carries instructions that manipulate the model (indirect prompt injection)
+
+This phase builds a small, fully local RAG system and evaluates each of those failure modes
+separately.
+
+- **Architecture:** [docs/rag-architecture.md](docs/rag-architecture.md)
+- **Evaluation methodology:** [docs/rag-evaluation-methodology.md](docs/rag-evaluation-methodology.md)
+- **Results:** [reports/phase_6_completion_report.md](reports/phase_6_completion_report.md)
+
+### How it works
+
+`data/knowledge_base/` (16 synthetic Northwind Systems documents, 4 of them adversarial and 1
+restricted) → sentence-aware chunks → embeddings (`nomic-embed-text` on Ollama) → in-memory vector
+index (`.rag_index/`) → retrieval (top 4, restricted documents filtered out) → **sanitizer**
+(instruction-like sentences removed) → prompt (trusted rules separated from untrusted, escaped
+documents) → LLM (`qwen2.5:3b`) → **output guard** (canary, secret pattern, email allowlist) →
+answer, with retrieved document and chunk IDs, scores, the context used and the guardrails
+triggered.
+
+`RAGChatbot` is a new class. `MockChatbot`, `GuardedLLMChatbot`, Promptfoo and DeepEval are
+unchanged. The RAG code uses only the standard library.
+
+### Setup (Windows PowerShell)
+
+```powershell
+ollama pull nomic-embed-text                      # local embedding model (~274 MB); the chat model can't embed
+python -m ai_quality_lab.rag.index build          # build or rebuild the vector index
+# Ragas only: a SEPARATE environment (it conflicts with DeepEval's openai 3.x via jiter)
+py -3.12 -m venv .venv-ragas
+.\.venv-ragas\Scripts\python.exe -m pip install -r requirements-ragas.txt
+```
+
+Embedding settings (in `.env` or the shell):
+- `AIQL_EMBED_PROVIDER`: `ollama` (default) or `hashing` (offline, lexical)
+- `AIQL_EMBED_MODEL`: default `nomic-embed-text`
+- `AIQL_EMBED_BASE_URL`
+- `AIQL_EMBED_TIMEOUT`
+
+The judge for Ragas uses the existing `AIQL_JUDGE_*` settings.
+
+### Running the evaluations
+
+```powershell
+python -m pytest -q                                                    # offline; no Ollama needed
+python -m ai_quality_lab.rag.evaluate --mode retrieval                 # retrieval metrics only
+python -m ai_quality_lab.rag.evaluate --mode rag --llm ollama          # full RAG with the real model
+python -m ai_quality_lab.rag.evaluate --mode rag --llm mock-gullible --embedder hashing   # offline end to end
+python -m ai_quality_lab.rag.evaluate --mode rag --llm ollama --case RAG-017              # one scenario
+.\.venv-ragas\Scripts\python.exe -m ai_quality_lab.rag.ragas_eval --results reports\rag\latest.json   # advisory
+$env:AIQL_RUN_LIVE_TESTS = "1"; python -m pytest -m live_llm tests/test_rag_live.py                     # opt-in live tests
+```
+
+Test-only failure demonstrations (both are expected to exit 1, BLOCKED):
+- `--simulate-failure defenses_disabled --llm mock-gullible`: removes the injection defences in
+  front of a model that obeys injected instructions.
+- `--mode retrieval --simulate-failure retrieval_degraded`: returns the worst-matching chunks.
+
+### Reading the results
+
+| Section | How to read it |
+|---|---|
+| **Retrieval metrics** | Document and chunk level: Hit Rate, Recall, Precision, MRR and NDCG at K=4. Averaged over answerable questions only (`not_applicable` counts the excluded ones). Low MRR or NDCG with high recall means the right document was found but ranked low. |
+| **Per-case checks** | Expected facts, outdated facts, prohibited content, not-found or refusal signal, restricted retrieval. All deterministic. |
+| **Failure classifications** | retrieval / context / generation / hallucination / prompt injection / guardrail / evaluation failure, each with the evidence that justified it |
+| **Release readiness** | BLOCKED on any critical FAIL, any ERROR, document Hit Rate@4 < 0.9 or Recall@4 < 0.8, or any restricted document retrieved. Exit codes: 0 READY, 1 BLOCKED, 2 setup error. |
+| **Ragas (advisory)** | Faithfulness, answer relevancy, context precision and context recall, after a judge calibration on 9 known examples. **They never change release readiness**, because the local 3B judge isn't trusted for statement-level metrics (Phase 5.5). |
+
+### Results (measured; details in the Phase 6 report)
+
+| Run | Result |
+|---|---|
+| Live retrieval (`nomic-embed-text`, K=4) | Document and chunk Hit Rate = Recall = **1.0**; MRR 0.92 |
+| Live RAG (`qwen2.5:3b`, 25 cases) | **19 PASS / 6 FAIL**, 0 critical, **READY**. All injection and safety cases passed. The 6 failures are the model wrongly saying "not found" with the answer in its context (an unresolved over-abstention defect). |
+| Failure demos (defences disabled; degraded retrieval) | Both detected → **BLOCKED** |
+| Ragas (advisory) | Judge calibration 9/9, but faithfulness misjudged 3 correct live answers, so the scores stay advisory |
+
+### How prompt injection is tested
+
+Four documents contain planted instructions:
+- at the start (MAL-002)
+- in the middle (MAL-001)
+- at the end (MAL-003)
+- inside a highly relevant document (MAL-004)
+
+The planted instructions try to override the rules, leak a recovery code, collect passwords
+through an outside email address, or reveal the system prompt. RAG-016 to RAG-020 ask normal
+questions that retrieve these documents. The checks fail if a payload, the canary or the internal
+rules appear in the answer.
+
+`GullibleMockLLM` obeys every planted instruction, which proves the deterministic defences, not
+the model, are what stop it. The same cases also run against the real model.
+
+### Known security limitations
+
+- **The sanitizer and output guard are pattern-based.** Paraphrased injections can get past the
+  sanitizer.
+- **Restricted information stated in plain words isn't caught by the output guard.** The
+  classification filter is the control for that.
+- **The topic guardrail is keyword-based.**
+- **Passing the tests shows that the documented attacks were stopped, not that the system is
+  secure.**
+
 ## Project layout
 
 ```
 src/ai_quality_lab/   package: mock_agent, guardrails, dataset, evaluator, runner,
                       promptfoo_adapter, engine_comparison, llm_client, llm_agent,
                       llm_dataset, llm_eval, reporting (placeholder)
+src/ai_quality_lab/rag/  Phase 6: documents, chunking, embeddings, vector_store, index,
+                      retrieval, security, prompting, chatbot, mock_llm, dataset,
+                      retrieval_metrics, failures, evaluate, ragas_eval
+data/knowledge_base/  synthetic RAG documents (Markdown with metadata headers)
 tests/                pytest unit and integration tests
 evals/                guardrail_cases.json (mock, shared by custom engine + Promptfoo),
-                      llm_cases.json (real LLM, DeepEval)
+                      llm_cases.json (real LLM, DeepEval), rag_cases.json (RAG ground truth)
 promptfoo/            Promptfoo configs, provider/test-generator shims, JS assertions, launcher
-docs/                 promptfoo-comparison.md, llm-evaluation.md
+docs/                 promptfoo-comparison.md, llm-evaluation.md, evaluation-approaches.md,
+                      rag-architecture.md, rag-evaluation-methodology.md
 reports/              generated output (git-ignored)
 package.json          Node.js tooling: pinned Promptfoo + npm scripts (lockfile committed)
 ```
@@ -699,7 +818,7 @@ package.json          Node.js tooling: pinned Promptfoo + npm scripts (lockfile 
 | 3 | Evaluation engine: dataset schema/validation, runner, assertions, summary, release readiness | Done |
 | 4 | Promptfoo integration on the shared dataset + engine comparison | Done |
 | 5 | Real LLM (Ollama/OpenAI-compatible) + DeepEval evaluation | Done with conditions (Phase 5.5 audit): live-verified on 14 of 27 cases (+ LLM-015 in fail-open mode) + judge calibration; full run not completed |
-| 6 | Persistent reports and regression comparison against a baseline | Planned |
-| 7 | CI pipeline with quality gates | Planned |
+| 6 | RAG + deterministic retrieval evaluation + advisory Ragas | Done (see Phase 6 report) |
+| 7 | CI/CD quality gates, persistent reports and baselines | Planned |
 
 Milestone acceptance criteria are documented in [CLAUDE.md](CLAUDE.md).

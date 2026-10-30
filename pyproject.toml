@@ -23,6 +23,15 @@ llm = [
     "deepeval==4.3.2",
     "ollama==0.6.3",
 ]
+# Phase 6: Ragas, installed ONLY into the separate .venv-ragas (requirements-ragas.txt).
+# It cannot share an environment with the `llm` extra: every `instructor` release (a Ragas
+# dependency) pins jiter<0.15, while openai 3.x (used by DeepEval here) needs jiter>=0.16.
+ragas = [
+    "ragas==0.4.3",
+    # ragas 0.4.3 imports langchain_community.chat_models.vertexai, which langchain-community
+    # 0.4.x removed (ModuleNotFoundError at `import ragas`). 0.3.31 verified with pip check.
+    "langchain-community<0.4",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
