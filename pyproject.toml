@@ -9,11 +9,16 @@ description = "Automated evaluation framework for a mock AI chatbot with configu
 readme = "README.md"
 requires-python = ">=3.12"
 # Runtime dependencies: intentionally none. The framework uses the standard library only.
+# The real-LLM client also uses only the standard library; DeepEval is an optional extra.
 dependencies = []
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.3",
+]
+# Phase 5: DeepEval for LLM evaluation. Pinned exactly; it pulls in ~60 transitive packages.
+llm = [
+    "deepeval==4.3.2",
 ]
 
 [tool.setuptools.packages.find]
@@ -23,7 +28,10 @@ where = ["src"]
 minversion = "8.0"
 testpaths = ["tests"]
 # -ra: summarise skips/xfails/failures; --strict-markers: typo'd markers are errors, not silent no-ops.
-addopts = "-ra --strict-markers"
+# -p no:deepeval / no:asyncio: DeepEval installs pytest plugins that auto-load into every run; this
+# suite uses neither (DeepEval evaluations run via `python -m ai_quality_lab.llm_eval`).
+addopts = "-ra --strict-markers -p no:deepeval -p no:asyncio"
 markers = [
     "setup: environment and packaging sanity checks",
+    "live_llm: calls a real LLM (Ollama/OpenAI); skipped unless AIQL_RUN_LIVE_TESTS=1",
 ]

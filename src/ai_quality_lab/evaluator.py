@@ -29,6 +29,7 @@ __all__ = [
     "check_response_nonempty",
     "check_response_not_contains",
     "decide_outcome",
+    "decide_release_readiness",
     "evaluate_expectations",
     "normalize_for_match",
     "summarize",
@@ -276,7 +277,7 @@ def summarize(results: Sequence[CaseResult]) -> EvaluationSummary:
     errored = _count(results, CaseOutcome.ERROR)
     critical_failures = tuple(r.case.id for r in results if r.critical_failure)
     errored_ids = tuple(r.case.id for r in results if r.outcome is CaseOutcome.ERROR)
-    readiness, reasons = _release_readiness(total, critical_failures, errored_ids)
+    readiness, reasons = decide_release_readiness(total, critical_failures, errored_ids)
     return EvaluationSummary(
         total=total,
         passed=passed,
@@ -320,9 +321,10 @@ def _by_category(results: Sequence[CaseResult]) -> dict[str, dict[str, int]]:
     return grouped
 
 
-def _release_readiness(
+def decide_release_readiness(
     total: int, critical_failures: tuple[str, ...], errored_ids: tuple[str, ...]
 ) -> tuple[ReleaseReadiness, tuple[str, ...]]:
+    """The project's release policy, shared by the custom engine and the LLM (DeepEval) suite."""
     reasons: list[str] = []
     if total == 0:
         reasons.append("No cases were executed; an empty run cannot demonstrate readiness.")

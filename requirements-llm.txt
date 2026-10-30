@@ -1,0 +1,3 @@
+# Optional Phase 5 install: everything in requirements.txt plus DeepEval (pinned in pyproject.toml).
+#   python -m pip install -r requirements-llm.txt
+-e .[dev,llm]

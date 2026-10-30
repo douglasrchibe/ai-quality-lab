@@ -5,7 +5,8 @@ Instructions for Claude Code working in this repository.
 ## Project objective
 
 Build an automated evaluation framework for a **mock** AI chatbot that simulates configurable
-topic guardrails (modelled on an LLM Guard + CMS-config setup). The framework will eventually
+topic guardrails (modelled on an LLM Guard + CMS-config setup), and (Phase 5) for a real LLM
+behind the same guardrail. The framework will eventually
 evaluate responses, detect regressions, measure quality, generate reports, and enforce CI/CD
 quality gates. This is a learning/portfolio project for AI-evaluation QA automation.
 
@@ -13,13 +14,19 @@ quality gates. This is a learning/portfolio project for AI-evaluation QA automat
 
 - **Python 3.12+**, standard library first.
 - **pytest** is the only Python dev dependency. There are no runtime dependencies.
+- **DeepEval** (`deepeval==4.3.2`) and the `ollama` client are an **optional** `llm` extra
+  (`requirements-llm.txt`). The LLM chat client itself is standard-library only. Code that
+  imports `deepeval` must import it lazily (inside functions) after
+  `prepare_deepeval_environment()`, so the base install and offline tests never need it.
 - **Promptfoo** (Node.js, pinned exactly in `package.json`, lockfile committed) is the only
   Node dependency. Install with `npm ci`; run only through the npm scripts / `promptfoo/run.mjs`.
 - **src layout** (`src/ai_quality_lab/`), installed editable via `pip install -r requirements.txt`.
 - **pyproject.toml** is the single source of truth for metadata, dependencies, and pytest config.
   `requirements.txt` only contains `-e .[dev]`.
 - Eval cases are **data** (`evals/*.json`), kept separate from test code.
-- Out of scope unless explicitly approved: real LLMs, paid APIs, LLM-as-a-judge, DeepEval, Ragas,
+- Approved in Phase 5: a real LLM (local Ollama by default; OpenAI-compatible hosted optional)
+  and DeepEval LLM-as-a-judge metrics.
+- Out of scope unless explicitly approved: making paid API calls on the user's behalf, Ragas,
   databases, Docker, cloud services, custom web UIs, autonomous agents, CI workflows.
 
 ## Layout
@@ -33,11 +40,18 @@ quality gates. This is a learning/portfolio project for AI-evaluation QA automat
 | `src/ai_quality_lab/runner.py` | `Agent` protocol, `run_evaluation_suite()`, CLI (`python -m ai_quality_lab.runner`) |
 | `src/ai_quality_lab/promptfoo_adapter.py` | Promptfoo Python provider (`call_api`) and dataset-to-Promptfoo test conversion |
 | `src/ai_quality_lab/engine_comparison.py` | Compares a Promptfoo results file with the custom engine, case by case |
-| `src/ai_quality_lab/reporting.py` | Placeholder: report files and baselines (Phase 5) |
+| `src/ai_quality_lab/llm_client.py` | Env-based LLM settings, `.env` loader, stdlib OpenAI-compatible client, typed errors |
+| `src/ai_quality_lab/llm_agent.py` | `GuardedLLMChatbot` (keyword guardrail + model), CLI for one question |
+| `src/ai_quality_lab/llm_dataset.py` | Schema/validation for `evals/llm_cases.json` |
+| `src/ai_quality_lab/llm_eval.py` | DeepEval runner: judge, metrics, checks, summary, CLI |
+| `src/ai_quality_lab/reporting.py` | Placeholder: report files and baselines (Phase 6) |
 | `tests/` | pytest tests, one file per module + `test_setup.py`; shared fixtures in `conftest.py` |
 | `evals/guardrail_cases.json` | Evaluation dataset shared by both engines (schema in `dataset.py` and README) |
 | `promptfoo/` | Promptfoo configs (normal + failure demo), thin Python shims, `assertions.js`, `run.mjs` launcher |
 | `docs/promptfoo-comparison.md` | Custom engine vs. Promptfoo comparison and run results |
+| `evals/llm_cases.json` | Real-LLM cases (behavioural expectations, DeepEval metrics, robust checks) |
+| `docs/llm-evaluation.md` | Metric choices, layers, cost, and limitations of the LLM evaluation |
+| `.env.example` | Documented settings; copy to git-ignored `.env`. Never commit secrets |
 | `reports/` | Generated output, git-ignored except `.gitkeep` and `reports/baselines/` |
 
 ## Coding standards
@@ -94,8 +108,9 @@ A milestone is done only when **all** of the following are true:
 | 2 | Mock chatbot with configurable guardrails | Done |
 | 3 | Evaluation engine: dataset, runner, assertions, summary, release readiness | Done |
 | 4 | Promptfoo integration on the shared dataset + engine comparison | Done |
-| 5 | Persistent reports + regression comparison vs baseline | Planned |
-| 6 | CI pipeline with quality gates | Planned |
+| 5 | Real LLM + DeepEval evaluation | Done: live-verified on smoke + failure demo; full 25-case run not completed |
+| 6 | Persistent reports + regression comparison vs baseline | Planned |
+| 7 | CI pipeline with quality gates | Planned |
 
 ## Evaluation engine rules (Phase 3)
 
@@ -165,3 +180,21 @@ A milestone is done only when **all** of the following are true:
 - After changing the dataset, adapter, or assertions, run `npm run eval:promptfoo`, the failure
   demo, and `python -m ai_quality_lab.engine_comparison` on both results files; both must report
   0 disagreements.
+
+## Real-LLM and DeepEval rules (Phase 5)
+
+- `MockChatbot` stays the default everywhere; never replace it with the LLM. `GuardedLLMChatbot`
+  must keep the same `respond()`/`ChatResponse` contract and run the deterministic guardrail
+  before any model call.
+- `python -m pytest` must stay offline and free: use fakes (`FakeClient`, `FakeAgent`,
+  `FakeMetric`, local HTTP server). Real model calls only in `tests/test_llm_live.py`, marked
+  `live_llm` and skipped unless `AIQL_RUN_LIVE_TESTS=1`.
+- Never run hosted-provider (paid) evaluations without the user's explicit go-ahead. Never print
+  or log API keys; `LLMSettings.api_key` is excluded from repr.
+- LLM expectations describe behaviour; avoid exact-string checks on generated text except for
+  robust facts, word limits, and leakage strings. A judge/metric failure to compute is ERROR,
+  never PASS.
+- DeepEval 4.x: every metric passes when `score >= threshold` (Hallucination/Toxicity/Bias were
+  inverted in older versions). Use `SingleTurnParams` (not `LLMTestCaseParams`) and `OpenAIModel`
+  (not the deprecated `GPTModel`).
+- Report live-run results only from runs actually executed, with the model and judge used.
