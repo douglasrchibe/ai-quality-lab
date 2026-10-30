@@ -24,12 +24,14 @@ quality gates. This is a learning/portfolio project for AI-evaluation QA automat
 
 | Path | Purpose |
 |---|---|
-| `src/ai_quality_lab/mock_agent.py` | Mock chatbot + guardrail config (Phase 2) |
-| `src/ai_quality_lab/evaluator.py` | Scores responses against expectations |
-| `src/ai_quality_lab/runner.py` | Loads eval cases, runs them, collects results |
-| `src/ai_quality_lab/reporting.py` | Writes reports, quality-gate exit codes |
-| `tests/` | pytest unit tests, one file per module + `test_setup.py` |
-| `evals/` | Versioned eval case definitions (JSON) |
+| `src/ai_quality_lab/mock_agent.py` | `MockChatbot`, `ChatResponse`, `SimulatedFailure` (Phase 2) |
+| `src/ai_quality_lab/guardrails.py` | Config validation (`GuardrailConfig`) and `KeywordTopicDetector` |
+| `src/ai_quality_lab/dataset.py` | Eval dataset schema, loading, validation (`EvalCase`, `Severity`, `Category`) |
+| `src/ai_quality_lab/evaluator.py` | Deterministic assertions, `CaseResult`, `summarize()`, release readiness |
+| `src/ai_quality_lab/runner.py` | `Agent` protocol, `run_evaluation_suite()`, CLI (`python -m ai_quality_lab.runner`) |
+| `src/ai_quality_lab/reporting.py` | Placeholder: report files and baselines (Phase 4) |
+| `tests/` | pytest tests, one file per module + `test_setup.py`; shared fixtures in `conftest.py` |
+| `evals/guardrail_cases.json` | Evaluation dataset (schema documented in `dataset.py` and README) |
 | `reports/` | Generated output, git-ignored except `.gitkeep` and `reports/baselines/` |
 
 ## Coding standards
@@ -83,35 +85,49 @@ A milestone is done only when **all** of the following are true:
 | Phase | Scope | Status |
 |---|---|---|
 | 1 | Environment, structure, docs, setup test | Done |
-| 2 | Mock chatbot with configurable guardrails | Planned |
-| 3 | Evaluator + eval case schema | Planned |
-| 4 | Runner + regression detection vs baseline | Planned |
-| 5 | Reporting (JSON/Markdown) + quality metrics | Planned |
-| 6 | CI pipeline with quality gates | Planned |
+| 2 | Mock chatbot with configurable guardrails | Done |
+| 3 | Evaluation engine: dataset, runner, assertions, summary, release readiness | Done |
+| 4 | Report files (JSON/Markdown) + regression comparison vs baseline | Planned |
+| 5 | CI pipeline with quality gates | Planned |
+
+## Evaluation engine rules (Phase 3)
+
+- Dependency direction: `runner` -> `evaluator` -> `dataset`. `mock_agent` must never import
+  evaluation code. The evaluator judges only `ObservedReply` (`response`, `blocked`,
+  `detected_topics`), never agent internals.
+- Expected values in `evals/` must match the chatbot's **actual** contract. Known detector gaps are
+  characterized with `known-limitation` tags, not hidden. Never edit expectations just to turn a
+  run green; a changed expectation needs a stated reason.
+- Severity lives in the dataset. Release readiness is BLOCKED on any critical FAIL, any ERROR, or
+  zero cases (illustrative policy). Pass rate = passed / all executed cases.
+- `tests/test_runner.py` requires that the full dataset passes against the healthy chatbot and that
+  `GUARDRAIL_FAIL_OPEN` fails exactly the cases expecting `blocked: true`.
 
 ## Phase 2 acceptance criteria: mock chatbot
 
 **Configurable topic guardrails**
-- AC1: The agent is constructed with an explicit config object (e.g. `GuardrailConfig`) listing
-  topics and an enabled/disabled flag per topic. There is no hidden global state.
+- AC1: The agent is constructed with an explicit config
+  (`{"guardrails": {"<topic>": {"enabled": bool}}}`), validated into `GuardrailConfig` at startup.
+  `enabled: true` blocks the topic. Invalid config raises `InvalidGuardrailConfigError` (fail closed).
 - AC2: At least one topic (`cooking`) is supported. Topic detection is rule-based (keywords) and
-  case-insensitive, and the keyword list for each topic is defined in one place.
+  case-insensitive, lives in `guardrails.py` separately from the chatbot, and defines each topic's
+  keyword list in one place.
 
 **Allowed vs blocked behaviour**
 - AC3: With `cooking` **enabled**, a cooking request returns a refusal response.
 - AC4: With `cooking` **disabled**, the same request returns a normal (non-refusal) answer.
-- AC5: Responses are structured (e.g. `AgentResponse` with `text`, `blocked: bool`,
-  `triggered_guardrail: str | None`), so evaluators assert on fields, not on fragile string matching.
+- AC5: Responses are a frozen `ChatResponse` (`message`, `response`, `blocked`, `detected_topics`,
+  `reason`, `outcome`), so evaluators assert on fields, not on fragile string matching.
   Refusal text is a single defined constant/template.
 
 **Unrelated questions**
-- AC6: Non-cooking questions get a normal answer, `blocked=False`, `triggered_guardrail=None`,
-  regardless of whether the cooking guardrail is enabled or disabled.
+- AC6: Non-cooking questions get a fixed answer or neutral fallback, with `blocked=False` and no
+  cooking topic detected, regardless of whether the cooking guardrail is enabled or disabled.
 - AC7: Edge inputs (empty string, whitespace, mixed case, punctuation) are handled without exceptions
   and with defined, documented behaviour.
 
 **Deliberate guardrail failure**
-- AC8: An explicit, opt-in failure mode (e.g. `FailureMode.BYPASS_GUARDRAIL`, off by default) makes
+- AC8: An explicit, opt-in failure mode (`SimulatedFailure.GUARDRAIL_FAIL_OPEN`, off by default) makes
   the agent answer a request that *should* be blocked, as if the guardrail had silently failed.
 - AC9: The failure mode is visible only through behaviour (the response looks like a normal answer).
   It does not set a flag in the response that would make detection trivial.
