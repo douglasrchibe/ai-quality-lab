@@ -53,6 +53,7 @@ quality gates. This is a learning/portfolio project for AI-evaluation QA automat
 | `evals/rag_cases.json` | RAG ground truth (reference context, relevant doc IDs, facts) |
 | `src/ai_quality_lab/ci_check.py` / `ci_summary.py` | CI check wrapper (exit code -> PASS/BLOCKED/ERROR) and skip audit, job summary, final gate |
 | `.github/workflows/` | `ci.yml` (deterministic quality gates), `ragas-environment.yml` (path-filtered) |
+| `constraints/` | CI lock files (primary and Ragas environments), generated from CI `pip freeze` |
 | `ci/known_defects.json` | Open defects that only live runs can detect; listed in every CI summary |
 | `src/ai_quality_lab/reporting.py` | Placeholder: report files and baselines (Phase 8) |
 | `tests/` | pytest tests, one file per module + `test_setup.py`; shared fixtures in `conftest.py` |
@@ -93,6 +94,8 @@ quality gates. This is a learning/portfolio project for AI-evaluation QA automat
 - Do not add a dependency without first explaining why the standard library is insufficient and
   getting approval.
 - Declare dependencies in `pyproject.toml` only, with a lower bound (e.g. `pytest>=8.3`).
+- CI installs through `constraints/ci-primary.txt` / `constraints/ragas.txt` (Linux lock files).
+  Regenerate them from a CI `pip freeze` artifact (docs/ci-pipeline.md); never hand-edit them.
 - Never modify the global Python installation or system-wide settings (e.g. execution policy).
 
 ## Workflow

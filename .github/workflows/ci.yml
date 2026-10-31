@@ -48,11 +48,12 @@ jobs:
           cache-dependency-path: |
             pyproject.toml
             requirements*.txt
+            constraints/ci-primary.txt
       - uses: actions/setup-node@v4 # node runs the JS assertion tests in test_promptfoo_adapter
         with:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install project with dev + llm extras (DeepEval library only, no models)
-        run: python -m pip install -r requirements-llm.txt
+        run: python -m pip install -r requirements-llm.txt -c constraints/ci-primary.txt
       - name: Run offline pytest suite
         run: >-
           python -m ai_quality_lab.ci_check --name pytest --codes pytest --expect pass
@@ -85,7 +86,7 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Install project (standard library only)
-        run: python -m pip install -e .
+        run: python -m pip install -e . -c constraints/ci-primary.txt
       - name: Custom engine on the guardrail dataset (must be READY)
         run: >-
           python -m ai_quality_lab.ci_check --name custom-engine --codes project --expect pass
@@ -129,7 +130,7 @@ jobs:
           cache: npm
       - name: Install project and pinned Promptfoo (package-lock.json)
         run: |
-          python -m pip install -e .
+          python -m pip install -e . -c constraints/ci-primary.txt
           npm ci --no-fund --no-audit
           # promptfoo/run.mjs uses this interpreter for the Python provider and test generator.
           echo "PROMPTFOO_PYTHON=$(command -v python)" >> "$GITHUB_ENV"
@@ -184,7 +185,7 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Install project (standard library only)
-        run: python -m pip install -e .
+        run: python -m pip install -e . -c constraints/ci-primary.txt
       - name: Retrieval metrics and gates (hashing embeddings)
         run: >-
           python -m ai_quality_lab.ci_check --name rag-retrieval --codes project --expect pass
@@ -236,8 +237,9 @@ jobs:
           cache-dependency-path: |
             pyproject.toml
             requirements*.txt
+            constraints/ci-primary.txt
       - name: Install project with dev + llm extras
-        run: python -m pip install -r requirements-llm.txt
+        run: python -m pip install -r requirements-llm.txt -c constraints/ci-primary.txt
       - name: pip check
         run: >-
           python -m ai_quality_lab.ci_check --name pip-check --codes pip --expect pass
@@ -275,7 +277,7 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Install project (standard library only)
-        run: python -m pip install -e .
+        run: python -m pip install -e . -c constraints/ci-primary.txt
       - name: Download check artifacts
         uses: actions/download-artifact@v4
         with:

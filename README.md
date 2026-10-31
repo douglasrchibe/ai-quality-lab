@@ -806,7 +806,7 @@ Five quality jobs run in parallel, followed by a final gate:
 | Custom engine | 33/33 READY. The fail-open demonstration must stay **BLOCKED**. The LLM dataset validates. |
 | Promptfoo | Suite passes. The failure demo must stay **BLOCKED** (exit 100). Promptfoo and the custom engine agree on every case. |
 | RAG (deterministic) | Retrieval gates with hashing embeddings. Safety cases hold against a worst-case mock model. The defences-disabled and degraded-retrieval demos must stay **BLOCKED**. |
-| Dependencies | `pip check` is clean. Ragas is *not* installed in the primary environment. |
+| Dependencies | `pip check` is clean. Ragas is *not* installed in the primary environment. Every CI install uses a lock file in `constraints/`. |
 | Quality gate | Collects every artifact, writes the run summary, exits 0 (PASS), 1 (BLOCKED) or 2 (ERROR) |
 
 **Reading a failed run:**
@@ -852,6 +852,7 @@ docs/                 promptfoo-comparison.md, llm-evaluation.md, evaluation-app
                       rag-architecture.md, rag-evaluation-methodology.md, ci-pipeline.md
 .github/workflows/    ci.yml (quality gates), ragas-environment.yml (Ragas env validation)
 ci/known_defects.json open defects listed in every CI run summary
+constraints/          CI lock files (Linux), generated from CI pip freeze
 reports/              generated output (git-ignored)
 package.json          Node.js tooling: pinned Promptfoo + npm scripts (lockfile committed)
 ```

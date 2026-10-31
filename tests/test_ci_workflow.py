@@ -3,6 +3,7 @@
 import importlib.util
 import json
 import re
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -148,7 +149,58 @@ def test_ragas_environment_is_separate_and_path_filtered():
     assert "workflow_dispatch" in ragas["on"]
     for event in ("push", "pull_request"):
         assert "requirements-ragas.txt" in ragas["on"][event]["paths"]
+        assert "constraints/ragas.txt" in ragas["on"][event]["paths"]
     installs = [c for c in run_commands(ragas) if "pip install" in c]
-    assert installs == ["python -m pip install -r requirements-ragas.txt"]
+    assert installs == ["python -m pip install -r requirements-ragas.txt -c constraints/ragas.txt"]
     ci_installs = "\n".join(c for c in run_commands(load(CI)) if "pip install" in c)
     assert "ragas" not in ci_installs  # never mixed into the primary environment
+
+
+# Each workflow installs with exactly one lock file; the Ragas environment needs its own because
+# its jiter/openai versions conflict with the primary environment's.
+LOCK_FILES = {CI: "constraints/ci-primary.txt", RAGAS: "constraints/ragas.txt"}
+LOCK_EXTRAS = {"constraints/ci-primary.txt": ("dev", "llm"),
+               "constraints/ragas.txt": ("dev", "ragas")}
+PIN = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)==(\S+)$")
+
+
+def normalize(name: str) -> str:
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def read_lock(relative: str) -> dict[str, str]:
+    pins = {}
+    for line in (ROOT / relative).read_text(encoding="utf-8").splitlines():
+        if not line.strip() or line.startswith("#"):
+            continue
+        match = PIN.match(line)
+        assert match, f"{relative}: not a plain name==version line: {line!r}"
+        pins[normalize(match.group(1))] = match.group(2)
+    return pins
+
+
+@pytest.mark.parametrize("workflow", list(LOCK_FILES), ids=lambda p: p.name)
+def test_every_install_uses_the_workflow_lock_file(workflow):
+    lock = LOCK_FILES[workflow]
+    data = load(workflow)
+    installs = [c for c in run_commands(data) if "pip install" in c]
+    assert installs
+    for command in installs:
+        assert f"-c {lock}" in command, command
+    for job in data["jobs"].values():
+        for step in steps(job):
+            if step.get("with", {}).get("cache") == "pip":  # cache key must change with the lock
+                assert lock in step["with"]["cache-dependency-path"]
+
+
+@pytest.mark.parametrize("lock", list(LOCK_EXTRAS))
+def test_lock_file_matches_pyproject(lock):
+    pins = read_lock(lock)
+    assert "ai-quality-lab" not in pins  # the project itself is installed editable, never locked
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+    for extra in LOCK_EXTRAS[lock]:
+        for requirement in project["optional-dependencies"][extra]:
+            name = normalize(re.split(r"[<>=!~\[; ]", requirement, maxsplit=1)[0])
+            assert name in pins, f"{lock} is missing {name}; regenerate it"
+            if "==" in requirement:  # exact pins in pyproject must agree with the lock
+                assert pins[name] == requirement.split("==", 1)[1].strip(), requirement

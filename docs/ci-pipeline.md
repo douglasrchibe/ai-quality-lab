@@ -53,7 +53,7 @@ cancels superseded runs for the same PR or branch.
 | `custom-engine` | `pip install -e .` | `custom-engine` → PASS (JSON report); `custom-engine-fail-open-demo` → **BLOCKED**; `llm-dataset-validation` → PASS |
 | `promptfoo` | `-e .`, `npm ci` (pinned lockfile) | `promptfoo` → PASS; `promptfoo-failure-demo` → **BLOCKED** (exit 100); `engine-agreement` and `engine-agreement-failure-demo` → PASS (0 disagreements) |
 | `rag-deterministic` | `-e .` | `rag-retrieval` → PASS; `rag-mock` (gullible mock model) → PASS; `rag-demo-defenses-disabled` → **BLOCKED**; `rag-demo-retrieval-degraded` → **BLOCKED** |
-| `dependencies` | `requirements-llm.txt` | `pip-check` → PASS; `ragas-isolated` → PASS (no `ragas` or `instructor` in the primary environment); `pip freeze` recorded |
+| `dependencies` | `requirements-llm.txt` (locked) | `pip-check` → PASS; `ragas-isolated` → PASS (no `ragas` or `instructor` in the primary environment); `pip freeze` recorded |
 | `quality-gate` | `-e .` | `needs` all jobs, runs `if: always()`. Downloads every `ci-*` artifact, writes the job summary, then `ci_summary gate` exits 0/1/2. |
 
 The five quality jobs run in parallel. Every check step after the first uses
@@ -132,6 +132,35 @@ All reports contain only synthetic data:
 
 No environment values or credentials are written. The summary is built from JSON files and exit
 codes, never from console text, and shows "unavailable" for anything it can't read.
+
+## Locked Python versions
+
+CI installs every Python environment through a constraints file, so a new upstream release can't
+change a run without a commit:
+
+| Lock file | Used by |
+|---|---|
+| `constraints/ci-primary.txt` | Every install in `ci.yml` (`requirements-llm.txt` and `-e .`) |
+| `constraints/ragas.txt` | `ragas-environment.yml` (it needs its own; the `jiter`/`openai` versions conflict with the primary environment) |
+
+**What they contain:**
+- **Linux (CI runner) versions.** Local Windows installs don't use them, because a few packages
+  differ by platform.
+- **Only `name==version` lines.** The project itself is never included.
+
+**What `tests/test_ci_workflow.py` enforces:**
+- every CI install uses its lock file
+- the lock file is part of the pip cache key
+- each lock covers every dependency of its extras
+- the lock's versions match the exact pins in `pyproject.toml`
+
+**To upgrade (regenerate, never hand-edit):**
+1. On a branch, change `pyproject.toml` if needed. In the relevant lock file, delete the lines to
+   upgrade, or everything below the header for a full refresh.
+2. Push and open a pull request. CI resolves the unlocked packages and records the result in the
+   `pip-freeze.txt` artifact (`ci-dependencies`, or `ragas-environment`).
+3. Replace the lock body with that freeze, minus its first line (the editable `-e git+…` project
+   line). Push again and check that CI passes with the new lock.
 
 ## Running the same checks locally (Windows PowerShell, `.venv` active)
 
