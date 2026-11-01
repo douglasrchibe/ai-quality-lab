@@ -89,7 +89,7 @@ class EngineComparison:
 def load_promptfoo_results(path: str | Path) -> PromptfooRun:
     """Parse a Promptfoo ``eval -o results.json`` file into per-case outcomes."""
     try:
-        document = json.loads(Path(path).read_text(encoding="utf-8"))
+        document = json.loads(Path(path).read_text(encoding="utf-8-sig"))  # BOM-tolerant
         rows = document["results"]["results"]
     except (json.JSONDecodeError, KeyError, TypeError) as exc:
         raise PromptfooResultsError(f"{path} is not a Promptfoo JSON results file: {exc}") from exc

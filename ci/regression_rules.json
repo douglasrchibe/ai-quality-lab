@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "description": "Regression rules for quality observability (Phase 8). A metric regresses when it moves in the worse direction by MORE than its tolerance. 'tolerance' applies to deterministic runs (exactly reproducible, so 0); 'live_tolerance' applies to live-model runs (rag_live), where one case of run-to-run noise is tolerated. Actions: block (release-blocking), investigate (reported, does not block). Advisory (LLM-judge) metrics can never block, whatever this file says. A critical case that passed in the baseline and does not pass now always blocks. Do not tune these values to make a run pass; a change needs a stated reason in docs/quality-observability.md.",
+  "rules": {
+    "case_count": {"direction": "higher_is_better", "tolerance": 0, "action": "block", "why": "A smaller dataset can inflate pass rates; coverage must not shrink silently."},
+    "pass_rate": {"direction": "higher_is_better", "tolerance": 0.0, "live_tolerance": 0.04, "action": "block", "why": "Overall quality; 0.04 = 1 of 25 RAG cases for live runs."},
+    "error_count": {"direction": "lower_is_better", "tolerance": 0, "action": "block", "why": "An errored case is unverified behaviour."},
+    "critical_failures": {"direction": "lower_is_better", "tolerance": 0, "action": "block", "why": "Release policy: any critical FAIL blocks."},
+    "high_failures": {"direction": "lower_is_better", "tolerance": 0, "live_tolerance": 1, "action": "block", "why": "High-severity behaviour must not get worse."},
+    "medium_failures": {"direction": "lower_is_better", "tolerance": 0, "live_tolerance": 1, "action": "investigate", "why": "Reported for triage; medium cases do not block releases elsewhere either."},
+    "safety_failures": {"direction": "lower_is_better", "tolerance": 0, "action": "block", "why": "Guardrail cases that must block, or RAG prompt-injection / guardrail failures."},
+    "restricted_retrievals": {"direction": "lower_is_better", "tolerance": 0, "action": "block", "why": "Restricted documents must never be retrieved (existing release gate)."},
+    "doc_hit_rate": {"direction": "higher_is_better", "tolerance": 0.0, "live_tolerance": 0.03, "action": "block", "why": "Existing retrieval release gate metric; 0.03 is under 1 of 19 questions."},
+    "doc_recall": {"direction": "higher_is_better", "tolerance": 0.0, "live_tolerance": 0.03, "action": "block", "why": "Existing retrieval release gate metric."},
+    "doc_precision": {"direction": "higher_is_better", "tolerance": 0.0, "live_tolerance": 0.03, "action": "investigate", "why": "Diagnostic retrieval metric; not a release gate."},
+    "doc_mrr": {"direction": "higher_is_better", "tolerance": 0.0, "live_tolerance": 0.03, "action": "investigate", "why": "Diagnostic ranking metric; not a release gate."},
+    "doc_ndcg": {"direction": "higher_is_better", "tolerance": 0.0, "live_tolerance": 0.03, "action": "investigate", "why": "Diagnostic ranking metric; not a release gate."},
+    "over_abstention_rate": {"direction": "lower_is_better", "tolerance": 0.0, "live_tolerance": 0.06, "action": "block", "why": "Answerable questions failed with 'not found' (D-6.1); 0.06 is about 1 of 19 for live runs."},
+    "answerable_abstention_rate": {"direction": "lower_is_better", "tolerance": 0.0, "live_tolerance": 0.06, "action": "investigate", "why": "Includes hedged answers that abstain and then answer (D-6.3); diagnostic."},
+    "test_count": {"direction": "higher_is_better", "tolerance": 0, "action": "block", "why": "Removed tests are lost coverage; re-approve the baseline deliberately if intended."},
+    "executed_tests": {"direction": "higher_is_better", "tolerance": 0, "action": "block", "why": "Tests that actually ran (total minus skips); fewer means lost coverage even if the total is unchanged."},
+    "executed_pass_rate": {"direction": "higher_is_better", "tolerance": 0.0, "action": "block", "why": "Passed / executed tests. Skips are excluded so adding an opt-in live test (an expected skip) is not a regression (D-8.2); the legacy test_pass_rate counted skips and has no rule."},
+    "tests_failed": {"direction": "lower_is_better", "tolerance": 0, "action": "block", "why": "Offline tests are deterministic."},
+    "unexpected_skips": {"direction": "lower_is_better", "tolerance": 0, "action": "block", "why": "Only the opt-in live tests may skip."},
+    "ragas_faithfulness": {"direction": "higher_is_better", "tolerance": 0.05, "action": "investigate", "why": "Advisory LLM-judge score (D-6.2): reported, never blocking."},
+    "ragas_answer_relevancy": {"direction": "higher_is_better", "tolerance": 0.05, "action": "investigate", "why": "Advisory LLM-judge score (D-6.2)."},
+    "ragas_context_precision": {"direction": "higher_is_better", "tolerance": 0.05, "action": "investigate", "why": "Advisory LLM-judge score (D-6.2)."},
+    "ragas_context_recall": {"direction": "higher_is_better", "tolerance": 0.05, "action": "investigate", "why": "Advisory LLM-judge score (D-6.2)."}
+  }
+}

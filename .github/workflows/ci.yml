@@ -281,9 +281,110 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
 
+  observability:
+    name: Regression vs approved baseline
+    # Compares this run's deterministic results with the baselines committed in reports/baselines.
+    # Never approves or updates a baseline (that is an explicit, reviewed local action).
+    needs: [python-tests, custom-engine, promptfoo, rag-deterministic, dependencies]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install project (standard library only)
+        run: python -m pip install -e . -c constraints/ci-primary.txt
+      - name: Download check artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ci-*
+          path: downloaded
+      - name: Record this run's evaluations (each report is recorded independently)
+        run: |
+          mkdir -p ci-artifacts/observability
+          status=0
+          record() { python -m ai_quality_lab.observability record "$@" || status=1; }
+          H=ci-artifacts/observability/history.jsonl
+          record --kind pytest --report downloaded/ci-python-tests/skip-audit.json --history $H
+          record --kind custom_engine --history $H \
+            --report downloaded/ci-custom-engine/custom-engine-report.json
+          record --kind promptfoo --history $H \
+            --report downloaded/ci-promptfoo/promptfoo-results.json
+          record --kind rag --report downloaded/ci-rag-deterministic/rag-retrieval.json --history $H
+          record --kind rag --report downloaded/ci-rag-deterministic/rag-mock.json --history $H
+          # Seeded-defect runs, each in its own history, for the demonstrations below.
+          record --kind custom_engine --history ci-artifacts/observability/demo-fail-open.jsonl \
+            --report downloaded/ci-custom-engine/custom-engine-fail-open-report.json
+          record --kind rag --history ci-artifacts/observability/demo-defenses-disabled.jsonl \
+            --report downloaded/ci-rag-deterministic/rag-demo-defenses-disabled.json
+          record --kind rag --history ci-artifacts/observability/demo-retrieval-degraded.jsonl \
+            --report downloaded/ci-rag-deterministic/rag-demo-retrieval-degraded.json
+          exit $status
+      - name: Regression vs approved baseline (must PASS)
+        if: ${{ !cancelled() }}
+        run: >-
+          python -m ai_quality_lab.ci_check --name regression-vs-baseline --codes project
+          --expect pass --out ci-artifacts/observability
+          --report ci-artifacts/observability/regression.json --
+          python -m ai_quality_lab.observability compare
+          --history ci-artifacts/observability/history.jsonl
+          --types custom_engine,promptfoo,rag_retrieval,rag_mock,pytest
+          --output-json ci-artifacts/observability/regression.json
+          --output-md ci-artifacts/observability/regression.md
+      - name: Regression demonstration - fail-open guardrail (must stay BLOCKED)
+        if: ${{ !cancelled() }}
+        run: >-
+          python -m ai_quality_lab.ci_check --name regression-demo-fail-open --codes project
+          --expect blocked --out ci-artifacts/observability
+          --report ci-artifacts/observability/regression-demo-fail-open.json --
+          python -m ai_quality_lab.observability compare
+          --history ci-artifacts/observability/demo-fail-open.jsonl --types custom_engine
+          --output-json ci-artifacts/observability/regression-demo-fail-open.json
+      - name: Regression demonstration - RAG defenses disabled (must stay BLOCKED)
+        if: ${{ !cancelled() }}
+        run: >-
+          python -m ai_quality_lab.ci_check --name regression-demo-defenses-disabled
+          --codes project --expect blocked --out ci-artifacts/observability
+          --report ci-artifacts/observability/regression-demo-defenses-disabled.json --
+          python -m ai_quality_lab.observability compare
+          --history ci-artifacts/observability/demo-defenses-disabled.jsonl --types rag_mock
+          --output-json ci-artifacts/observability/regression-demo-defenses-disabled.json
+      - name: Regression demonstration - degraded retrieval (must stay BLOCKED)
+        if: ${{ !cancelled() }}
+        run: >-
+          python -m ai_quality_lab.ci_check --name regression-demo-retrieval-degraded
+          --codes project --expect blocked --out ci-artifacts/observability
+          --report ci-artifacts/observability/regression-demo-retrieval-degraded.json --
+          python -m ai_quality_lab.observability compare
+          --history ci-artifacts/observability/demo-retrieval-degraded.jsonl --types rag_retrieval
+          --output-json ci-artifacts/observability/regression-demo-retrieval-degraded.json
+      - name: Quality report and job summary
+        if: ${{ !cancelled() }}
+        run: |
+          python -m ai_quality_lab.observability report \
+            --history ci-artifacts/observability/history.jsonl \
+            --output ci-artifacts/observability/quality-report.md > /dev/null
+          if [ -f ci-artifacts/observability/regression.md ]; then
+            cat ci-artifacts/observability/regression.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Regression report unavailable (see the record step)." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-observability
+          path: ci-artifacts/observability/
+          retention-days: 14
+          if-no-files-found: warn
+
   quality-gate:
     name: Quality gate + summary
-    needs: [python-tests, custom-engine, promptfoo, rag-deterministic, dependencies]
+    needs: [python-tests, custom-engine, promptfoo, rag-deterministic, dependencies, observability]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
