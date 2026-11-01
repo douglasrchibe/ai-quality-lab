@@ -1,0 +1,82 @@
+{
+  "cases": [],
+  "comparability_key": "a2a46c11fe263d14",
+  "dataset": {
+    "case_count": null,
+    "corpus_fingerprint": null,
+    "fingerprint": null,
+    "path": null
+  },
+  "deterministic": true,
+  "evaluation_type": "pytest",
+  "identity": {
+    "evaluation_type": "pytest",
+    "suite": "offline pytest"
+  },
+  "metrics": {
+    "executed_pass_rate": {
+      "denominator": 756,
+      "kind": "deterministic",
+      "numerator": 756,
+      "value": 1.0
+    },
+    "executed_tests": {
+      "denominator": 768,
+      "kind": "deterministic",
+      "numerator": 756,
+      "value": 756
+    },
+    "expected_skips": {
+      "denominator": 768,
+      "kind": "deterministic",
+      "numerator": 12,
+      "value": 12
+    },
+    "passed_tests": {
+      "denominator": 756,
+      "kind": "deterministic",
+      "numerator": 756,
+      "value": 756
+    },
+    "test_count": {
+      "denominator": null,
+      "kind": "deterministic",
+      "numerator": null,
+      "value": 768
+    },
+    "tests_failed": {
+      "denominator": 756,
+      "kind": "deterministic",
+      "numerator": 0,
+      "value": 0
+    },
+    "unexpected_skips": {
+      "denominator": 768,
+      "kind": "deterministic",
+      "numerator": 0,
+      "value": 0
+    }
+  },
+  "parameters": {},
+  "recorded_at": "2026-11-01T21:16:04Z",
+  "run_id": "20261101T211604Z-pytest-e48ee0",
+  "schema_version": 1,
+  "source": {
+    "branch": "main",
+    "ci_run_id": null,
+    "commit": "865c879db1b899f1b201195ae8609e082af2c8b4",
+    "note": null,
+    "origin": "local",
+    "report_file": "ci-artifacts/python-tests/skip-audit.json",
+    "report_sha256": "ec2e2c68ec3e121c",
+    "uncommitted_changes": false
+  },
+  "status": "PASS",
+  "thresholds": {
+    "allowed_skip_modules": [
+      "tests.test_llm_live",
+      "tests.test_rag_live"
+    ]
+  },
+  "unmeasured": {}
+}
