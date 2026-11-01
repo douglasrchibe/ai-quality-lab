@@ -1,12 +1,35 @@
 # AI Quality Lab
 
+[![AI Quality Lab CI](https://github.com/douglasrchibe/ai-quality-lab/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/douglasrchibe/ai-quality-lab/actions/workflows/ci.yml)
+
 An automated evaluation framework for a **mock** AI chatbot with configurable topic guardrails.
 It is a learning project demonstrating QA automation practices for AI evaluation: deterministic
 test cases, regression detection, quality metrics, reporting, and CI quality gates.
 
+## What this demonstrates
+
+An end-to-end quality engineering lifecycle for AI features. Everything runs offline in CI; the
+real-model parts are run and documented locally.
+
+| Capability | How it shows up here |
+|---|---|
+| Expected behaviour as data | JSON datasets with a severity per case; release policy: any critical failure or error blocks |
+| Independent verification | A custom engine and Promptfoo evaluate the same dataset and must agree case by case |
+| LLM evaluation, honestly | A real local LLM (Ollama) with DeepEval; LLM-judge scores are calibrated and kept **advisory** |
+| RAG quality and security | Retrieval metrics against ground truth; prompt-injection defences tested with a worst-case model |
+| Tests that prove they work | Seeded failures (a fail-open guardrail, disabled defences, degraded retrieval) that CI requires to be **caught** |
+| CI quality gates | GitHub Actions with PASS / BLOCKED / ERROR outcomes; a required check guards `main` |
+| Regression detection | Every run compared with **owner-approved baselines**; findings name the metric, values, denominators and tolerance |
+| Honest reporting | Open known defects (D-6.1 to D-6.4) are listed in every CI summary and report |
+
+**Try it in 10 minutes:** [docs/demo-guide.md](docs/demo-guide.md). Copyable commands, what you'll
+see, and what each step proves.
+
 ## Current status
 
-**Phases 1–8 are implemented.** So far:
+**Phases 1–8 are complete** (Phase 8 merged and validated on GitHub Actions/Ubuntu on
+2026-11-01; baselines approved by the project owner). Offline suite: **756 passed, 12 skipped**
+(the 12 are opt-in live-model tests). So far:
 - the project foundation
 - a deterministic mock chatbot
 - a custom evaluation engine that runs a JSON dataset of scenarios against the chatbot and prints
@@ -72,11 +95,26 @@ CurrentUser is sufficient. Alternatively, call the venv's Python directly withou
 python -m pytest
 ```
 
+Expected: **756 passed, 12 skipped**. The skips are the opt-in live-model tests
+(`test_llm_live.py`, `test_rag_live.py`); the CI skip audit fails on any other skip.
+
 Run a single module's tests by naming the file, e.g. `python -m pytest tests/test_mock_agent.py`.
-Test files: `test_mock_agent.py`, `test_dataset.py`, `test_evaluator.py`, `test_runner.py`,
-`test_promptfoo_adapter.py`, `test_engine_comparison.py`, `test_llm_client.py`,
-`test_llm_agent.py`, `test_llm_dataset.py`, `test_llm_eval.py`, `test_llm_live.py` (opt-in, see
-Phase 5), and `test_setup.py`. A few tests in
+There is one test file per module, grouped by area:
+- **Core:** `test_setup.py`, `test_mock_agent.py`, `test_dataset.py`, `test_evaluator.py`,
+  `test_runner.py`
+- **Promptfoo (Phase 4):** `test_promptfoo_adapter.py`, `test_engine_comparison.py`
+- **LLM (Phase 5):** `test_llm_client.py`, `test_llm_agent.py`, `test_llm_dataset.py`,
+  `test_llm_eval.py`, `test_llm_live.py` (opt-in)
+- **RAG (Phase 6):** `test_rag_ingestion.py`, `test_rag_retrieval.py`, `test_rag_metrics.py`,
+  `test_rag_chatbot.py`, `test_rag_evaluation.py`, `test_rag_ragas.py`, `test_rag_live.py`
+  (opt-in)
+- **CI (Phase 7):** `test_ci_check.py`, `test_ci_summary.py`, `test_ci_workflow.py` (checks the real
+  workflow file)
+- **Observability (Phase 8):** `test_observability_records.py`, `test_observability_history.py`,
+  `test_observability_regression.py`, `test_observability_baselines.py`,
+  `test_observability_cli.py`
+
+A few tests in
 `test_promptfoo_adapter.py` run the JavaScript assertion helpers with Node.js. If Node.js is
 missing, they are reported as skipped.
 
@@ -873,8 +911,19 @@ python -m ai_quality_lab.observability trend --type rag_mock
 python -m ai_quality_lab.observability report                        # reports/quality/quality-report.md
 ```
 
+**Results (2026-11-01):**
+
+| What | Result |
+|---|---|
+| First GitHub Actions/Ubuntu run (PR #1, run 41275506765) | All 7 checks pass; all 5 comparisons **comparable** (dataset and knowledge-base fingerprints match between Windows and Ubuntu); 3 seeded regression demos BLOCKED |
+| Independent audit | 5 defects found (D-8.1 to D-8.5), all fixed with regression tests ([audit](reports/phase_8_independent_audit_report.md), [remediation](reports/phase_8_1_remediation_report.md)) |
+| Baselines | Re-approved by the project owner from committed `main` (`865c879`), replacing provisional baselines; earlier ones kept in the audit trail |
+| Owner-baseline pull request (PR #2) | CI correctly **blocked** the merge on a test that depended on the old baseline; fixed, then all checks passed |
+
 Data model, metric definitions, rules, baseline approval, investigation guide and limitations:
-[docs/quality-observability.md](docs/quality-observability.md).
+[docs/quality-observability.md](docs/quality-observability.md). Phase reports:
+[completion](reports/phase_8_completion_report.md),
+[finalization](reports/phase_8_2_finalization_report.md).
 
 ## Project layout
 
@@ -893,7 +942,7 @@ evals/                guardrail_cases.json (mock, shared by custom engine + Prom
 promptfoo/            Promptfoo configs, provider/test-generator shims, JS assertions, launcher
 docs/                 promptfoo-comparison.md, llm-evaluation.md, evaluation-approaches.md,
                       rag-architecture.md, rag-evaluation-methodology.md, ci-pipeline.md,
-                      quality-observability.md
+                      quality-observability.md, demo-guide.md (10-minute walkthrough)
 .github/workflows/    ci.yml (quality gates), ragas-environment.yml (Ragas env validation)
 ci/known_defects.json open defects listed in every CI run summary
 ci/regression_rules.json  regression directions, tolerances and actions (Phase 8)
@@ -914,6 +963,6 @@ package.json          Node.js tooling: pinned Promptfoo + npm scripts (lockfile 
 | 5 | Real LLM (Ollama/OpenAI-compatible) + DeepEval evaluation | Done with conditions (Phase 5.5 audit): live-verified on 14 of 27 cases (+ LLM-015 in fail-open mode) + judge calibration; full run not completed |
 | 6 | RAG + deterministic retrieval evaluation + advisory Ragas | Done (see Phase 6 report) |
 | 7 | GitHub Actions CI with deterministic quality gates | Done (see Phase 7 report) |
-| 8 | Quality observability: history, trends, regression detection, approved baselines | Implemented and validated locally; GitHub run pending (see Phase 8 report) |
+| 8 | Quality observability: history, trends, regression detection, approved baselines | Done: validated on GitHub Actions; baselines owner-approved (see Phase 8 reports) |
 
 Milestone acceptance criteria are documented in [CLAUDE.md](CLAUDE.md).
