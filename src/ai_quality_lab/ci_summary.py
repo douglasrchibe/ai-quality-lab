@@ -205,10 +205,20 @@ def _rag_line(rag: Any) -> str:
             + (f"; failure classes: {classes}" if classes else ""))
 
 
+def _regression_line(regression: Any) -> str:
+    if not regression:
+        return "report unavailable"
+    per_type = ", ".join(f"{c['evaluation_type']} {c['status']}" for c in regression["comparisons"])
+    problems = f"; problems: {'; '.join(regression['problems'])}" if regression["problems"] else ""
+    return (f"{regression['status']} against the approved baselines "
+            f"({per_type or 'nothing compared'}){problems}")
+
+
 def _defect_lines(known_defects_path: Path) -> list[str]:
     try:
         defects = json.loads(known_defects_path.read_text(encoding="utf-8"))["defects"]
-        return [f"- **{d['id']} ({d['severity']}):** {d['title']} ({', '.join(d['cases'])}). "
+        return [f"- **{d['id']} ({d['severity']}):** {d['title']}"
+                + (f" ({', '.join(d['cases'])})" if d["cases"] else "") + ". "
                 f"Last observed {d['last_observed']}. {d['ci_visibility']}"
                 for d in defects if d.get("status") == "open"]
     except (OSError, *SECTION_ERRORS):
@@ -251,6 +261,8 @@ def build_summary(root: Path, job_results: Mapping[str, str],
     for label, name in (("RAG retrieval (hashing)", "rag-retrieval.json"),
                         ("RAG end-to-end (mock model)", "rag-mock.json")):
         lines.append(_result_line(label, lambda name=name: _rag_line(_load_json(root, name))))
+    lines.append(_result_line("Regression vs baseline", lambda: _regression_line(
+        _load_json(root, "regression.json"))))
     lines.append("")
 
     lines += ["## Known defects (not detectable in CI, still open)", ""]

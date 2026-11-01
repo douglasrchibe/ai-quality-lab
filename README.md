@@ -6,7 +6,7 @@ test cases, regression detection, quality metrics, reporting, and CI quality gat
 
 ## Current status
 
-**Phases 1–7 are implemented.** So far:
+**Phases 1–8 are implemented.** So far:
 - the project foundation
 - a deterministic mock chatbot
 - a custom evaluation engine that runs a JSON dataset of scenarios against the chatbot and prints
@@ -22,9 +22,12 @@ test cases, regression detection, quality metrics, reporting, and CI quality gat
 - a **GitHub Actions CI pipeline** with deterministic quality gates, failure demonstrations
   that must stay blocked, a skip audit, downloadable artifacts, and a run summary that always lists
   open known defects.
+- **quality observability**: a validated history of evaluation records, trends over comparable
+  runs, regression detection against explicitly approved baselines (PASS / BLOCKED / ERROR), and a
+  Markdown quality report, enforced in CI.
 
-Still **planned**: persistent report files and baseline comparison, and CI integration. The
-`reporting.py` module is a placeholder.
+There are no further planned phases. The open known defects (D-6.1 to D-6.4) remain unresolved
+and are listed in every CI summary and quality report.
 
 ## Prerequisites
 
@@ -834,12 +837,52 @@ Run the same checks locally with the commands in [docs/ci-pipeline.md](docs/ci-p
 **A passing run is evidence for the tested scenarios under deterministic stand-ins, not a
 guarantee that the AI system is safe.**
 
+## Phase 8: Quality observability and regression detection
+
+Every evaluation run can be turned into a validated **record**:
+- one per evaluation type: custom engine, Promptfoo, RAG retrieval, mock RAG, live RAG, pytest,
+  and advisory Ragas
+- every metric keeps its numerator and denominator, and is marked deterministic or advisory
+- anything not measured is listed with a reason, never stored as 0
+
+Records go into an append-only JSONL **history** that is read strictly.
+
+**Regression detection** compares a run with the **approved baseline** in `reports/baselines/`.
+The result is:
+- **PASS:** no regression beyond tolerance
+- **BLOCKED:** a release-blocking regression, such as a new critical failure, lower pass rate,
+  worse retrieval, more over-abstention, or fewer tests or cases
+- **ERROR:** the comparison isn't reliable, for example missing or corrupt data, or a different
+  dataset, model or embedder
+
+Advisory LLM-judge scores are reported but can never block.
+
+Baselines change only through an explicit `baseline approve` command:
+- it's never run in CI
+- it rejects seeded-failure, non-PASS and regressing runs unless explicitly accepted
+- it keeps every earlier baseline and an append-only audit log
+
+In CI, a new `observability` job compares each run with the committed baselines (required to
+PASS). Three seeded-regression demonstrations must stay BLOCKED. The final quality gate depends
+on this job.
+
+```powershell
+python -m ai_quality_lab.observability record --kind rag --report reports/rag/rag-mock.json
+python -m ai_quality_lab.observability compare --types rag_mock      # exit 0 PASS / 1 BLOCKED / 2 ERROR
+python -m ai_quality_lab.observability trend --type rag_mock
+python -m ai_quality_lab.observability report                        # reports/quality/quality-report.md
+```
+
+Data model, metric definitions, rules, baseline approval, investigation guide and limitations:
+[docs/quality-observability.md](docs/quality-observability.md).
+
 ## Project layout
 
 ```
 src/ai_quality_lab/   package: mock_agent, guardrails, dataset, evaluator, runner,
                       promptfoo_adapter, engine_comparison, llm_client, llm_agent,
-                      llm_dataset, llm_eval, reporting (placeholder)
+                      llm_dataset, llm_eval, reporting (Markdown quality reports)
+src/ai_quality_lab/observability/  Phase 8: records, history, regression, baselines, cli
 src/ai_quality_lab/rag/  Phase 6: documents, chunking, embeddings, vector_store, index,
                       retrieval, security, prompting, chatbot, mock_llm, dataset,
                       retrieval_metrics, failures, evaluate, ragas_eval
@@ -849,11 +892,14 @@ evals/                guardrail_cases.json (mock, shared by custom engine + Prom
                       llm_cases.json (real LLM, DeepEval), rag_cases.json (RAG ground truth)
 promptfoo/            Promptfoo configs, provider/test-generator shims, JS assertions, launcher
 docs/                 promptfoo-comparison.md, llm-evaluation.md, evaluation-approaches.md,
-                      rag-architecture.md, rag-evaluation-methodology.md, ci-pipeline.md
+                      rag-architecture.md, rag-evaluation-methodology.md, ci-pipeline.md,
+                      quality-observability.md
 .github/workflows/    ci.yml (quality gates), ragas-environment.yml (Ragas env validation)
 ci/known_defects.json open defects listed in every CI run summary
+ci/regression_rules.json  regression directions, tolerances and actions (Phase 8)
 constraints/          CI lock files (Linux), generated from CI pip freeze
-reports/              generated output (git-ignored)
+reports/              generated output (git-ignored), except reports/baselines/ (approved
+                      baselines, committed) and the phase reports
 package.json          Node.js tooling: pinned Promptfoo + npm scripts (lockfile committed)
 ```
 
@@ -868,6 +914,6 @@ package.json          Node.js tooling: pinned Promptfoo + npm scripts (lockfile 
 | 5 | Real LLM (Ollama/OpenAI-compatible) + DeepEval evaluation | Done with conditions (Phase 5.5 audit): live-verified on 14 of 27 cases (+ LLM-015 in fail-open mode) + judge calibration; full run not completed |
 | 6 | RAG + deterministic retrieval evaluation + advisory Ragas | Done (see Phase 6 report) |
 | 7 | GitHub Actions CI with deterministic quality gates | Done (see Phase 7 report) |
-| 8 | Persistent reports and baseline trend comparison | Planned |
+| 8 | Quality observability: history, trends, regression detection, approved baselines | Implemented and validated locally; GitHub run pending (see Phase 8 report) |
 
 Milestone acceptance criteria are documented in [CLAUDE.md](CLAUDE.md).

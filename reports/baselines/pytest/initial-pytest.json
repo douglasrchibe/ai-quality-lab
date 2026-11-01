@@ -1,0 +1,69 @@
+{
+  "cases": [],
+  "comparability_key": "a2a46c11fe263d14",
+  "dataset": {
+    "case_count": null,
+    "corpus_fingerprint": null,
+    "fingerprint": null,
+    "path": null
+  },
+  "deterministic": true,
+  "evaluation_type": "pytest",
+  "identity": {
+    "evaluation_type": "pytest",
+    "suite": "offline pytest"
+  },
+  "metrics": {
+    "expected_skips": {
+      "denominator": 701,
+      "kind": "deterministic",
+      "numerator": 12,
+      "value": 12
+    },
+    "test_count": {
+      "denominator": null,
+      "kind": "deterministic",
+      "numerator": null,
+      "value": 701
+    },
+    "test_pass_rate": {
+      "denominator": 701,
+      "kind": "deterministic",
+      "numerator": 689,
+      "value": 0.9829
+    },
+    "tests_failed": {
+      "denominator": 701,
+      "kind": "deterministic",
+      "numerator": 0,
+      "value": 0
+    },
+    "unexpected_skips": {
+      "denominator": 701,
+      "kind": "deterministic",
+      "numerator": 0,
+      "value": 0
+    }
+  },
+  "parameters": {},
+  "recorded_at": "2026-11-01T04:02:29Z",
+  "run_id": "initial-pytest",
+  "schema_version": 1,
+  "source": {
+    "branch": "main",
+    "ci_run_id": null,
+    "commit": "2d28111f15e9709bfc1ca11422d8c7d824a195e5",
+    "note": "2 baseline-existence tests deselected (they require this baseline)",
+    "origin": "local",
+    "report_file": "ci-artifacts/python-tests/skip-audit.json",
+    "uncommitted_changes": true
+  },
+  "status": "PASS",
+  "thresholds": {
+    "allowed_skip_modules": [
+      "tests.test_llm_live",
+      "tests.test_rag_live"
+    ]
+  },
+  "unmeasured": {}
+}

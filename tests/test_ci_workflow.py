@@ -243,3 +243,37 @@ def test_ragas_path_filter_covers_project_modules_ragas_eval_imports():
         path = "src/" + module.replace(".", "/") + ".py"
         for event in ("push", "pull_request"):
             assert path in ragas["on"][event]["paths"], (event, path)
+
+
+def test_regression_job_compares_against_committed_baselines_and_never_approves(ci):
+    job = ci["jobs"]["observability"]
+    assert job["if"] == "${{ always() }}"
+    assert set(job["needs"]) == set(ci["jobs"]) - {"observability", "quality-gate"}
+    text = CI.read_text(encoding="utf-8")
+    assert "baseline approve" not in text and "--accept-" not in text  # CI never moves baselines
+    checks = [s["run"] for s in steps(job) if "ci_check" in s.get("run", "")]
+    gate = [c for c in checks if "--name regression-vs-baseline" in c]
+    assert len(gate) == 1 and "--expect pass" in gate[0]
+    types = re.search(r"--types (\S+)", gate[0]).group(1).split(",")
+    assert set(types) == {"custom_engine", "promptfoo", "rag_retrieval", "rag_mock", "pytest"}
+
+
+def test_regression_demonstrations_must_stay_blocked_and_are_report_checked(ci):
+    checks = [s["run"] for s in steps(ci["jobs"]["observability"])
+              if "--name regression-demo" in s.get("run", "")]
+    assert len(checks) == 3  # one per seeded defect, so one cannot hide behind another
+    for command in checks:
+        assert "--expect blocked" in command
+        report = re.search(r"--report (\S+)", command).group(1)
+        assert f"--output-json {report}" in command
+        assert len(re.search(r"--types (\S+)", command).group(1).split(",")) == 1
+
+
+def test_every_ci_comparison_type_has_a_committed_baseline():
+    manifest = json.loads((ROOT / "reports" / "baselines" / "manifest.json")
+                          .read_text(encoding="utf-8"))
+    commands = "\n".join(run_commands(load(CI)))
+    for types in re.findall(r"observability compare[^\n]*?--types (\S+)", commands.replace(
+            "\n", " ")):
+        for etype in types.split(","):
+            assert etype in manifest["current"], etype

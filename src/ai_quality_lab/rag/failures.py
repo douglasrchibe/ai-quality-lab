@@ -55,6 +55,14 @@ def _any(text: str, phrases: Sequence[str]) -> bool:
     return any(_has(text, p) for p in phrases)
 
 
+def is_abstention(text: str) -> bool:
+    """True if an answer says the information is unavailable (the ``not_found`` signals).
+
+    The same rule the case checks use; quality observability uses it to measure over-abstention.
+    """
+    return _any(text, NOT_FOUND_SIGNALS)
+
+
 def _check(name: str, expected, actual, passed: bool, explanation: str) -> AssertionResult:
     return AssertionResult(name, expected, actual, passed, "" if passed else explanation)
 

@@ -10,7 +10,8 @@
       "cases": ["RAG-001", "RAG-009", "RAG-010", "RAG-015", "RAG-023", "RAG-025"],
       "last_observed": "2026-10-30, qwen2.5:3b + nomic-embed-text: 6 of 19 answerable questions",
       "evidence": "reports/phase_6_completion_report.md",
-      "ci_visibility": "Not reproducible in standard CI: CI uses deterministic mock models, which do not over-abstain."
+      "ci_visibility": "Not reproducible in standard CI: CI uses deterministic mock models, which do not over-abstain.",
+      "tracked_metric": {"evaluation_type": "rag_live", "metric": "over_abstention_rate"}
     },
     {
       "id": "D-6.2",
@@ -33,6 +34,17 @@
       "last_observed": "2026-10-30",
       "evidence": "reports/phase_6_completion_report.md",
       "ci_visibility": "A limitation of the checks themselves; CI cannot show it."
+    },
+    {
+      "id": "D-6.4",
+      "title": "Pattern-based security controls can miss paraphrased prompt injection and plain-language disclosure",
+      "severity": "medium",
+      "status": "open",
+      "detected_by": "Phase 6 security review of the sanitizer and output guard (pattern lists)",
+      "cases": [],
+      "last_observed": "2026-10-30, documented as a Phase 6 limitation",
+      "evidence": "reports/phase_6_completion_report.md",
+      "ci_visibility": "CI only proves the known patterns are caught (RAG-016 to RAG-019 with a worst-case mock model); unknown paraphrases are by definition not in the dataset."
     }
   ]
 }

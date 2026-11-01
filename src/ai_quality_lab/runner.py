@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import json
 import sys
 import time
 from collections import Counter
@@ -223,6 +224,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="TEST-ONLY: run the mock chatbot with a simulated defect",
     )
     parser.add_argument("--json", action="store_true", help="print the summary as JSON")
+    parser.add_argument(
+        "--output",
+        type=Path,
+        help="also write the JSON report to this file (UTF-8); reliable on Windows PowerShell, "
+        "where '>' redirection may change the encoding",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -233,8 +240,15 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     simulated_failure = SimulatedFailure(args.simulate_failure)
     summary = run_evaluation_suite(cases, mock_chatbot_factory(simulated_failure))
+    # simulated_failure is recorded so a seeded-defect report is never mistaken for a normal run
+    # (quality observability reads it).
+    report_json = json.dumps({**summary.to_dict(), "simulated_failure": simulated_failure.value},
+                             indent=2, ensure_ascii=False)
+    if args.output is not None:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(report_json + "\n", encoding="utf-8")
     if args.json:
-        print(summary.to_json())
+        print(report_json)
     else:
         print(f"Dataset: {args.dataset}  ({len(cases)} cases)")
         if simulated_failure is not SimulatedFailure.NONE:
