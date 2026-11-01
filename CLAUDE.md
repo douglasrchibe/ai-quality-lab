@@ -245,6 +245,8 @@ A milestone is done only when **all** of the following are true:
   audit). Fix the cause or record a known defect with evidence.
 - Every check runs through `python -m ai_quality_lab.ci_check` with an explicit `--expect` and
   writes to `ci-artifacts/<job>/`; failure demonstrations use `--expect blocked` and must stay so.
+- Custom-engine and RAG checks pass `--report <json>`: exit 1 is also a crash, so BLOCKED/PASS must
+  agree with the report (`release_readiness`, `errored == 0`, `total > 0`) or the check is ERROR.
 - PASS / BLOCKED / ERROR are distinct (exit 0 / 1 / 2). Missing or unreadable job results are
   ERROR, never a pass.
 - Keep `ci/known_defects.json` current; the six D-6.1 over-abstention cases stay listed until a

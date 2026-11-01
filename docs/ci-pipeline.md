@@ -98,10 +98,25 @@ convention, and compares the result with the expected outcome:
 The wrapper exits **0** if the expected outcome occurred, **1** if a different quality outcome
 occurred (for example a demo that stopped blocking), and **2** on ERROR.
 
+**Exit code 1 alone isn't enough evidence.** A Python crash also exits 1, and a run whose cases all
+errored is BLOCKED too. So the custom engine and RAG checks pass `--report <json>`, and PASS or
+BLOCKED stands only if that report:
+- exists
+- ran at least one case
+- has `errored == 0`
+- has a `release_readiness` that agrees (READY or BLOCKED)
+
+Otherwise the check is **ERROR**. A failure demonstration therefore has to block because it
+*detected* the seeded failure, not because something broke.
+
 It always writes:
 - `<name>.status.json`
 - `<name>.log`
 - optionally the command's stdout (used for JSON reports)
+
+The summary step never crashes on a malformed report: that line shows "report unreadable". The
+gate step runs even if the summary step failed (`if: !cancelled()`). A status file that isn't a
+JSON object counts as ERROR.
 
 **The final gate (`ci_summary gate`) applies one rule:** PASS only if every job succeeded and every
 check met its expectation. Otherwise:

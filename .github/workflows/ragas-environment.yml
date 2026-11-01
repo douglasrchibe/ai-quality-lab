@@ -16,6 +16,8 @@ on:
       - requirements-ragas.txt
       - constraints/ragas.txt
       - src/ai_quality_lab/rag/ragas_eval.py
+      - src/ai_quality_lab/rag/embeddings.py # imported by ragas_eval
+      - src/ai_quality_lab/llm_client.py # imported by ragas_eval
       - tests/test_rag_ragas.py
       - .github/workflows/ragas-environment.yml
   pull_request:
@@ -25,6 +27,8 @@ on:
       - requirements-ragas.txt
       - constraints/ragas.txt
       - src/ai_quality_lab/rag/ragas_eval.py
+      - src/ai_quality_lab/rag/embeddings.py # imported by ragas_eval
+      - src/ai_quality_lab/llm_client.py # imported by ragas_eval
       - tests/test_rag_ragas.py
       - .github/workflows/ragas-environment.yml
 
@@ -47,6 +51,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"

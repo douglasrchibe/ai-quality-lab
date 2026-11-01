@@ -204,3 +204,42 @@ def test_lock_file_matches_pyproject(lock):
             assert name in pins, f"{lock} is missing {name}; regenerate it"
             if "==" in requirement:  # exact pins in pyproject must agree with the lock
                 assert pins[name] == requirement.split("==", 1)[1].strip(), requirement
+
+
+def test_engine_and_rag_checks_cross_check_their_json_report(ci):
+    # Exit 1 is also a crash or an all-errored run; the report proves the outcome was a real one.
+    checks = [c for c in run_commands(ci) if "ci_check" in c
+              and ("ai_quality_lab.runner" in c or "ai_quality_lab.rag.evaluate" in c)]
+    assert len(checks) == 6
+    for command in checks:
+        report = re.search(r"--report (\S+)", command)
+        assert report, command
+        assert (f"--stdout-file {report.group(1)}" in command
+                or f"--output {report.group(1)}" in command), command
+
+
+def test_gate_still_runs_if_the_summary_step_fails(ci):
+    gate = next(s for s in steps(ci["jobs"]["quality-gate"])
+                if "ci_summary gate" in s.get("run", ""))
+    assert gate["if"] == "${{ !cancelled() }}"
+
+
+@pytest.mark.parametrize("workflow", [CI, RAGAS], ids=lambda p: p.name)
+def test_checkout_does_not_persist_credentials(workflow):
+    data = load(workflow)
+    checkouts = [s for job in data["jobs"].values() for s in steps(job)
+                 if s.get("uses", "").startswith("actions/checkout@")]
+    assert checkouts
+    for step in checkouts:
+        assert step.get("with", {}).get("persist-credentials") is False
+
+
+def test_ragas_path_filter_covers_project_modules_ragas_eval_imports():
+    source = (ROOT / "src" / "ai_quality_lab" / "rag" / "ragas_eval.py").read_text(encoding="utf-8")
+    modules = re.findall(r"^from (ai_quality_lab(?:\.\w+)+) import", source, re.MULTILINE)
+    assert modules
+    ragas = load(RAGAS)
+    for module in modules:
+        path = "src/" + module.replace(".", "/") + ".py"
+        for event in ("push", "pull_request"):
+            assert path in ragas["on"][event]["paths"], (event, path)

@@ -194,3 +194,36 @@ def test_known_defects_file_is_complete():
     for defect in data["defects"]:
         assert {"id", "title", "severity", "status", "cases", "last_observed",
                 "ci_visibility"} <= set(defect)
+
+
+# --- Malformed artifacts never crash the summary or turn into a pass ----------------------------
+
+
+def test_summary_survives_malformed_reports(artifacts, tmp_path):
+    (artifacts / "ci-python-tests").mkdir()
+    (artifacts / "ci-python-tests" / "skip-audit.json").write_text('{"skipped": 0}',
+                                                                   encoding="utf-8")
+    (artifacts / "ci-custom-engine" / "custom-engine-report.json").write_text("[1]",
+                                                                              encoding="utf-8")
+    defects = tmp_path / "defects.json"
+    defects.write_text('{"defects": [{"id": "D-x", "status": "open"}]}', encoding="utf-8")
+    text = build_summary(artifacts, {"custom-engine": "success"}, defects)
+    assert "**pytest:** report unreadable (KeyError)" in text
+    assert "**Custom engine:** report unreadable (TypeError)" in text
+    assert "known defects file unavailable or unreadable" in text
+    output = tmp_path / "summary.md"
+    needs = json.dumps({"custom-engine": {"result": "success"}})
+    assert main(["summary", "--artifacts", str(artifacts), "--output", str(output),
+                 "--needs-json", needs]) == 0
+
+
+def test_status_file_that_is_not_an_object_is_an_error(artifacts):
+    (artifacts / "ci-custom-engine" / "odd.status.json").write_text("[]", encoding="utf-8")
+    needs = json.dumps({"custom-engine": {"result": "success"}})
+    assert main(["gate", "--artifacts", str(artifacts), "--needs-json", needs]) == 2
+
+
+def test_report_problem_is_shown_as_the_reason():
+    bad = {**status("demo", "ERROR", "BLOCKED"), "report_problem": "report has errored cases"}
+    outcome, reasons = overall_outcome({"custom-engine": "failure"}, [bad])
+    assert outcome == "ERROR" and "report has errored cases" in reasons[0]

@@ -364,3 +364,37 @@ You made the repository public. Branch protection on `main` now requires the
 
 **Trade-off:** CI is reproducible, but it no longer picks up upstream fixes or breakages on its
 own. Upgrades become deliberate changes, regenerated as described in `docs/ci-pipeline.md`.
+
+---
+
+## K. Independent review follow-up (2026-11-01)
+
+A skeptical review of the full Phase 7 change set (`9e3ce0e..97502a4`) found **no way for the gate
+to report a false PASS**. It did find three classification and robustness defects. All are fixed,
+each with a regression test built from the input that exposed it.
+
+| # | Defect (reproduced) | Fix |
+|---|---|---|
+| 1 | A failure demo that **crashed** (Python exits 1) counted as "BLOCKED as expected": the wrapper exited 0. A run with all cases errored was also BLOCKED with exit 1. pytest's demo tests (`errored == 0`, specific critical failures) were the only backstop. | `ci_check --report`: PASS or BLOCKED stands only if the JSON report exists, ran at least one case, has `errored == 0`, and its `release_readiness` agrees; otherwise ERROR. Used by all 6 custom-engine and RAG checks. |
+| 2 | A malformed artifact crashed the summary step (a `skip-audit.json` without `tests` raised `KeyError`), and the gate step was then **skipped**. The job still failed, but the run lost its PASS/BLOCKED/ERROR verdict. | Each results line and the known-defects list fall back to "report unreadable". The gate step runs with `if: !cancelled()`. |
+| 3 | A status file containing valid JSON that wasn't an object (`[]`) crashed the gate with exit 1 (the BLOCKED code) instead of ERROR. | Anything that isn't a JSON object is an unreadable status, which is ERROR (exit 2). |
+| 4 | Hardening | `persist-credentials: false` on every checkout. The Ragas path filter now includes the project modules `ragas_eval.py` imports (`rag/embeddings.py`, `llm_client.py`); a test derives that list from the imports. |
+
+**Checked and found sound:**
+- **Gate:** missing, empty or malformed job results, cancelled or skipped jobs, a job that failed
+  before any check, and unreadable statuses all produce ERROR.
+- **Security:** no secrets, read-only permissions, no event data interpolated into scripts.
+- **Gate integrity:** no thresholds, datasets or expected results changed; D-6.1 to D-6.3 remain
+  open and visible; live tests stay opt-in.
+
+**Left as documented risks:**
+- A job that times out after a check already failed is reported as BLOCKED rather than ERROR.
+- A shrinking test count isn't detected (planned for Phase 8 baselines).
+- Actions are pinned to major versions, not commit SHAs.
+- The required check can be bypassed by admins, so your own direct pushes to `main` aren't gated.
+
+**Validation:**
+- `python -m pytest -q`: **577 passed, 12 skipped** (560 + 17 new review tests)
+- the 6 report-checked commands, run locally exactly as in the workflow: all met their expectations
+- GitHub run: pending the next push
+

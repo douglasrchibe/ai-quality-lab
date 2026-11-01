@@ -41,6 +41,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
@@ -82,6 +84,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
@@ -91,14 +95,16 @@ jobs:
         run: >-
           python -m ai_quality_lab.ci_check --name custom-engine --codes project --expect pass
           --out ci-artifacts/custom-engine
-          --stdout-file ci-artifacts/custom-engine/custom-engine-report.json --
+          --stdout-file ci-artifacts/custom-engine/custom-engine-report.json
+          --report ci-artifacts/custom-engine/custom-engine-report.json --
           python -m ai_quality_lab.runner --json
       - name: Fail-open demonstration (must stay BLOCKED)
         if: ${{ !cancelled() }}
         run: >-
           python -m ai_quality_lab.ci_check --name custom-engine-fail-open-demo --codes project
           --expect blocked --out ci-artifacts/custom-engine
-          --stdout-file ci-artifacts/custom-engine/custom-engine-fail-open-report.json --
+          --stdout-file ci-artifacts/custom-engine/custom-engine-fail-open-report.json
+          --report ci-artifacts/custom-engine/custom-engine-fail-open-report.json --
           python -m ai_quality_lab.runner --json --simulate-failure guardrail_fail_open
       - name: Validate the LLM (DeepEval) dataset without calling a model
         if: ${{ !cancelled() }}
@@ -121,6 +127,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
@@ -181,6 +189,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
@@ -189,21 +199,24 @@ jobs:
       - name: Retrieval metrics and gates (hashing embeddings)
         run: >-
           python -m ai_quality_lab.ci_check --name rag-retrieval --codes project --expect pass
-          --out ci-artifacts/rag-deterministic --
+          --out ci-artifacts/rag-deterministic
+          --report ci-artifacts/rag-deterministic/rag-retrieval.json --
           python -m ai_quality_lab.rag.evaluate --mode retrieval --embedder hashing
           --output ci-artifacts/rag-deterministic/rag-retrieval.json
       - name: End-to-end RAG with a worst-case mock model (defenses must hold)
         if: ${{ !cancelled() }}
         run: >-
           python -m ai_quality_lab.ci_check --name rag-mock --codes project --expect pass
-          --out ci-artifacts/rag-deterministic --
+          --out ci-artifacts/rag-deterministic
+          --report ci-artifacts/rag-deterministic/rag-mock.json --
           python -m ai_quality_lab.rag.evaluate --mode rag --llm mock-gullible --embedder hashing
           --output ci-artifacts/rag-deterministic/rag-mock.json
       - name: Demonstration - defenses disabled (must stay BLOCKED)
         if: ${{ !cancelled() }}
         run: >-
           python -m ai_quality_lab.ci_check --name rag-demo-defenses-disabled --codes project
-          --expect blocked --out ci-artifacts/rag-deterministic --
+          --expect blocked --out ci-artifacts/rag-deterministic
+          --report ci-artifacts/rag-deterministic/rag-demo-defenses-disabled.json --
           python -m ai_quality_lab.rag.evaluate --mode rag --llm mock-gullible --embedder hashing
           --simulate-failure defenses_disabled
           --output ci-artifacts/rag-deterministic/rag-demo-defenses-disabled.json
@@ -211,7 +224,8 @@ jobs:
         if: ${{ !cancelled() }}
         run: >-
           python -m ai_quality_lab.ci_check --name rag-demo-retrieval-degraded --codes project
-          --expect blocked --out ci-artifacts/rag-deterministic --
+          --expect blocked --out ci-artifacts/rag-deterministic
+          --report ci-artifacts/rag-deterministic/rag-demo-retrieval-degraded.json --
           python -m ai_quality_lab.rag.evaluate --mode retrieval --embedder hashing
           --simulate-failure retrieval_degraded
           --output ci-artifacts/rag-deterministic/rag-demo-retrieval-degraded.json
@@ -230,6 +244,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
@@ -273,6 +289,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
@@ -291,6 +309,7 @@ jobs:
             --output downloaded/summary.md --needs-json "$NEEDS_JSON"
           cat downloaded/summary.md >> "$GITHUB_STEP_SUMMARY"
       - name: Enforce quality gate (PASS required)
+        if: ${{ !cancelled() }} # still give a verdict if the summary step failed
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
         run: python -m ai_quality_lab.ci_summary gate --artifacts downloaded --needs-json "$NEEDS_JSON"

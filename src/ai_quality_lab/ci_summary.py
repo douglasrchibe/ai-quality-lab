@@ -21,7 +21,7 @@ import argparse
 import json
 import sys
 import xml.etree.ElementTree as ET
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -88,6 +88,8 @@ def load_statuses(root: Path) -> list[dict[str, Any]]:
         try:
             status = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
+            status = None
+        if not isinstance(status, dict):  # unreadable, or valid JSON that is not an object
             status = {"name": path.name, "outcome": "ERROR", "expectation_met": False,
                       "expected": "?", "exit_code": None, "unreadable": True}
         statuses.append({**status, "job": job})
@@ -128,7 +130,8 @@ def overall_outcome(job_results: Mapping[str, str], statuses: Sequence[Mapping[s
         return "ERROR", ["no job results or check statuses were available"]
     unmet = [s for s in statuses if not s.get("expectation_met")]
     reasons = [f"{s.get('name')}: expected {s.get('expected')}, got {s.get('outcome')} "
-               f"(exit {s.get('exit_code')})" for s in unmet]
+               f"(exit {s.get('exit_code')})"
+               + (f"; {s['report_problem']}" if s.get("report_problem") else "") for s in unmet]
     error = any(s.get("outcome") == "ERROR" for s in unmet)
     for job, result in sorted(job_results.items()):
         if result == "success":
@@ -151,6 +154,65 @@ EXIT_CODES = {"PASS": 0, "BLOCKED": 1, "ERROR": 2}
 
 def _fmt(value: Any) -> str:
     return "unavailable" if value is None else str(value)
+
+
+SECTION_ERRORS = (KeyError, TypeError, AttributeError, ValueError)
+"""A malformed report shows as unreadable; it must not crash the summary (and skip the gate)."""
+
+
+def _result_line(label: str, render: Callable[[], str]) -> str:
+    try:
+        return f"- **{label}:** {render()}"
+    except SECTION_ERRORS as exc:
+        return f"- **{label}:** report unreadable ({type(exc).__name__})"
+
+
+def _pytest_line(skips: Any) -> str:
+    if not skips:
+        return "report unavailable"
+    return (f"{skips['tests']} tests, {skips['passed']} passed, {skips['failures']} failed, "
+            f"{skips['errors']} errors, {skips['skipped']} skipped ({skips['allowed_skips']} "
+            f"opt-in live tests; {len(skips['unexpected_skips'])} unexpected skips)")
+
+
+def _engine_line(engine: Any) -> str:
+    if not engine:
+        return "report unavailable"
+    return (f"{engine['passed']}/{engine['total']} passed, release readiness "
+            f"{engine['release_readiness']}")
+
+
+def _promptfoo_line(promptfoo: Any, comparison: Any) -> str:
+    stats = (promptfoo or {}).get("results", {}).get("stats")
+    run = (f"{stats['successes']} passed, {stats['failures']} failed, {stats['errors']} errors"
+           if stats else "report unavailable")
+    agreement = (f"{comparison['agreements']}/{comparison['cases_compared']}" if comparison
+                 else "unavailable")
+    return f"{run}; agreement with custom engine: {agreement}"
+
+
+def _rag_line(rag: Any) -> str:
+    if not rag:
+        return "report unavailable"
+    doc = rag.get("retrieval_metrics", {}).get("document", {})
+    gates = rag.get("release_gates", {})
+    failed_gates = [g for g, v in gates.items() if not v.get("passed")]
+    classes = {k: v for k, v in rag.get("failure_classifications", {}).items() if v}
+    return (f"{rag.get('passed')}/{rag.get('total')} passed, critical failures "
+            f"{rag.get('critical_failures') or 'none'}, readiness {rag.get('release_readiness')}; "
+            f"document Hit Rate@{rag.get('configuration', {}).get('top_k')} {doc.get('hit_rate')}, "
+            f"Recall {doc.get('recall')}; failed gates: {failed_gates or 'none'}"
+            + (f"; failure classes: {classes}" if classes else ""))
+
+
+def _defect_lines(known_defects_path: Path) -> list[str]:
+    try:
+        defects = json.loads(known_defects_path.read_text(encoding="utf-8"))["defects"]
+        return [f"- **{d['id']} ({d['severity']}):** {d['title']} ({', '.join(d['cases'])}). "
+                f"Last observed {d['last_observed']}. {d['ci_visibility']}"
+                for d in defects if d.get("status") == "open"]
+    except (OSError, *SECTION_ERRORS):
+        return ["- known defects file unavailable or unreadable"]
 
 
 def build_summary(root: Path, job_results: Mapping[str, str],
@@ -181,56 +243,18 @@ def build_summary(root: Path, job_results: Mapping[str, str],
     lines.append("")
 
     lines += ["## Results", ""]
-    skips = _load_json(root, "skip-audit.json")
-    if skips:
-        lines.append(f"- **pytest:** {skips['tests']} tests, {skips['passed']} passed, "
-                     f"{skips['failures']} failed, {skips['errors']} errors, {skips['skipped']} "
-                     f"skipped ({skips['allowed_skips']} opt-in live tests; "
-                     f"{len(skips['unexpected_skips'])} unexpected skips)")
-    else:
-        lines.append("- **pytest:** report unavailable")
-    engine = _load_json(root, "custom-engine-report.json")
-    lines.append("- **Custom engine:** " + (
-        f"{engine['passed']}/{engine['total']} passed, release readiness "
-        f"{engine['release_readiness']}" if engine else "report unavailable"))
-    promptfoo = _load_json(root, "promptfoo-results.json")
-    stats = (promptfoo or {}).get("results", {}).get("stats")
-    comparison = _load_json(root, "comparison-normal.json")
-    lines.append("- **Promptfoo:** " + (
-        f"{stats.get('successes')} passed, {stats.get('failures')} failed, {stats.get('errors')} "
-        "errors" if stats else "report unavailable") + "; agreement with custom engine: " + (
-        f"{comparison['agreements']}/{comparison['cases_compared']}" if comparison
-        else "unavailable"))
+    lines.append(_result_line("pytest", lambda: _pytest_line(_load_json(root, "skip-audit.json"))))
+    lines.append(_result_line("Custom engine", lambda: _engine_line(
+        _load_json(root, "custom-engine-report.json"))))
+    lines.append(_result_line("Promptfoo", lambda: _promptfoo_line(
+        _load_json(root, "promptfoo-results.json"), _load_json(root, "comparison-normal.json"))))
     for label, name in (("RAG retrieval (hashing)", "rag-retrieval.json"),
                         ("RAG end-to-end (mock model)", "rag-mock.json")):
-        rag = _load_json(root, name)
-        if not rag:
-            lines.append(f"- **{label}:** report unavailable")
-            continue
-        doc = rag.get("retrieval_metrics", {}).get("document", {})
-        gates = rag.get("release_gates", {})
-        failed_gates = [g for g, v in gates.items() if not v.get("passed")]
-        classes = {k: v for k, v in rag.get("failure_classifications", {}).items() if v}
-        lines.append(
-            f"- **{label}:** {rag.get('passed')}/{rag.get('total')} passed, critical failures "
-            f"{rag.get('critical_failures') or 'none'}, readiness {rag.get('release_readiness')}; "
-            f"document Hit Rate@{rag.get('configuration', {}).get('top_k')} {doc.get('hit_rate')}, "
-            f"Recall {doc.get('recall')}; failed gates: {failed_gates or 'none'}"
-            + (f"; failure classes: {classes}" if classes else ""))
+        lines.append(_result_line(label, lambda name=name: _rag_line(_load_json(root, name))))
     lines.append("")
 
     lines += ["## Known defects (not detectable in CI, still open)", ""]
-    try:
-        defects = json.loads(known_defects_path.read_text(encoding="utf-8"))["defects"]
-    except (OSError, ValueError, KeyError):
-        defects = None
-    if defects is None:
-        lines.append("- known defects file unavailable")
-    for d in defects or []:
-        if d.get("status") == "open":
-            cases = ", ".join(d["cases"])
-            lines.append(f"- **{d['id']} ({d['severity']}):** {d['title']} ({cases}). "
-                         f"Last observed {d['last_observed']}. {d['ci_visibility']}")
+    lines += _defect_lines(known_defects_path)
     lines += ["", "## Not run in this workflow", "",
               "- Live-model tests (`-m live_llm`) and live RAG/DeepEval evaluations (need Ollama).",
               "- Ragas advisory scoring (needs a judge model); Ragas *environment* validation runs "
