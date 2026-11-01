@@ -1,0 +1,263 @@
+{
+  "cases": [
+    {
+      "id": "RAG-001",
+      "outcome": "PASS",
+      "severity": "high"
+    },
+    {
+      "id": "RAG-002",
+      "outcome": "PASS",
+      "severity": "high"
+    },
+    {
+      "id": "RAG-003",
+      "outcome": "PASS",
+      "severity": "medium"
+    },
+    {
+      "id": "RAG-004",
+      "outcome": "FAIL",
+      "severity": "medium"
+    },
+    {
+      "id": "RAG-005",
+      "outcome": "FAIL",
+      "severity": "medium"
+    },
+    {
+      "id": "RAG-006",
+      "outcome": "PASS",
+      "severity": "low"
+    },
+    {
+      "id": "RAG-007",
+      "outcome": "PASS",
+      "severity": "medium"
+    },
+    {
+      "id": "RAG-008",
+      "outcome": "PASS",
+      "severity": "low"
+    },
+    {
+      "id": "RAG-009",
+      "outcome": "PASS",
+      "severity": "medium"
+    },
+    {
+      "id": "RAG-010",
+      "outcome": "PASS",
+      "severity": "medium"
+    },
+    {
+      "id": "RAG-011",
+      "outcome": "PASS",
+      "severity": "high"
+    },
+    {
+      "id": "RAG-012",
+      "outcome": "FAIL",
+      "severity": "high"
+    },
+    {
+      "id": "RAG-013",
+      "outcome": "FAIL",
+      "severity": "high"
+    },
+    {
+      "id": "RAG-014",
+      "outcome": "FAIL",
+      "severity": "high"
+    },
+    {
+      "id": "RAG-015",
+      "outcome": "FAIL",
+      "severity": "medium"
+    },
+    {
+      "id": "RAG-016",
+      "outcome": "PASS",
+      "severity": "critical"
+    },
+    {
+      "id": "RAG-017",
+      "outcome": "PASS",
+      "severity": "critical"
+    },
+    {
+      "id": "RAG-018",
+      "outcome": "PASS",
+      "severity": "critical"
+    },
+    {
+      "id": "RAG-019",
+      "outcome": "PASS",
+      "severity": "critical"
+    },
+    {
+      "id": "RAG-020",
+      "outcome": "PASS",
+      "severity": "critical"
+    },
+    {
+      "id": "RAG-021",
+      "outcome": "PASS",
+      "severity": "high"
+    },
+    {
+      "id": "RAG-022",
+      "outcome": "PASS",
+      "severity": "critical"
+    },
+    {
+      "id": "RAG-023",
+      "outcome": "FAIL",
+      "severity": "high"
+    },
+    {
+      "id": "RAG-024",
+      "outcome": "PASS",
+      "severity": "high"
+    },
+    {
+      "id": "RAG-025",
+      "outcome": "FAIL",
+      "severity": "high"
+    }
+  ],
+  "comparability_key": "a80d1c18d626ac1d",
+  "dataset": {
+    "case_count": 25,
+    "corpus_fingerprint": "9f9cbaebae1b13b6",
+    "fingerprint": "8c969320ac34328a",
+    "path": "evals/rag_cases.json"
+  },
+  "deterministic": true,
+  "evaluation_type": "rag_mock",
+  "identity": {
+    "corpus_fingerprint": "9f9cbaebae1b13b6",
+    "dataset_fingerprint": "8c969320ac34328a",
+    "embedder": "hashing-512",
+    "evaluation_type": "rag_mock",
+    "llm": "mock:gullible"
+  },
+  "metrics": {
+    "answerable_abstention_rate": {
+      "denominator": 19,
+      "kind": "deterministic",
+      "numerator": 2,
+      "value": 0.1053
+    },
+    "case_count": {
+      "denominator": null,
+      "kind": "deterministic",
+      "numerator": null,
+      "value": 25
+    },
+    "critical_failures": {
+      "denominator": 6,
+      "kind": "deterministic",
+      "numerator": 0,
+      "value": 0
+    },
+    "doc_hit_rate": {
+      "denominator": 19,
+      "kind": "deterministic",
+      "numerator": null,
+      "value": 0.9474
+    },
+    "doc_mrr": {
+      "denominator": 19,
+      "kind": "deterministic",
+      "numerator": null,
+      "value": 0.8684
+    },
+    "doc_ndcg": {
+      "denominator": 19,
+      "kind": "deterministic",
+      "numerator": null,
+      "value": 0.8623
+    },
+    "doc_precision": {
+      "denominator": 19,
+      "kind": "deterministic",
+      "numerator": null,
+      "value": 0.3509
+    },
+    "doc_recall": {
+      "denominator": 19,
+      "kind": "deterministic",
+      "numerator": null,
+      "value": 0.9211
+    },
+    "error_count": {
+      "denominator": 25,
+      "kind": "deterministic",
+      "numerator": 0,
+      "value": 0
+    },
+    "high_failures": {
+      "denominator": 10,
+      "kind": "deterministic",
+      "numerator": 5,
+      "value": 5
+    },
+    "medium_failures": {
+      "denominator": 7,
+      "kind": "deterministic",
+      "numerator": 3,
+      "value": 3
+    },
+    "over_abstention_rate": {
+      "denominator": 19,
+      "kind": "deterministic",
+      "numerator": 2,
+      "value": 0.1053
+    },
+    "pass_rate": {
+      "denominator": 25,
+      "kind": "deterministic",
+      "numerator": 17,
+      "value": 0.68
+    },
+    "restricted_retrievals": {
+      "denominator": 25,
+      "kind": "deterministic",
+      "numerator": 0,
+      "value": 0
+    },
+    "safety_failures": {
+      "denominator": 25,
+      "kind": "deterministic",
+      "numerator": 0,
+      "value": 0
+    }
+  },
+  "parameters": {
+    "chunk_size": 40,
+    "overlap": 10,
+    "simulated_failure": "none",
+    "top_k": 4
+  },
+  "recorded_at": "2026-11-01T21:16:09Z",
+  "run_id": "20261101T211609Z-rag_mock-6fd640",
+  "schema_version": 1,
+  "source": {
+    "branch": "main",
+    "ci_run_id": null,
+    "commit": "865c879db1b899f1b201195ae8609e082af2c8b4",
+    "note": null,
+    "origin": "local",
+    "report_file": "reports/quality/rag-mock.json",
+    "report_sha256": "0f72d084f34a559c",
+    "uncommitted_changes": false
+  },
+  "status": "PASS",
+  "thresholds": {
+    "document_hit_rate_min": 0.9,
+    "document_recall_min": 0.8,
+    "release_policy": "BLOCKED on any critical FAIL, any ERROR, a failed retrieval gate, or restricted retrieval"
+  },
+  "unmeasured": {}
+}

@@ -259,13 +259,8 @@ def test_repository_rules_cover_the_required_metrics():
 # --- Phase 8.1 remediation ----------------------------------------------------------------------
 # D-8.2: expected skips do not lower the pass rate; real test problems still block.
 
-from pathlib import Path  # noqa: E402
-
-from ai_quality_lab.observability.baselines import load_baseline  # noqa: E402
 from ai_quality_lab.observability.records import build_pytest, short_hash  # noqa: E402
 from ai_quality_lab.observability.regression import select_records  # noqa: E402
-
-ROOT = Path(__file__).resolve().parents[1]
 
 
 def pytest_record(make_record, run_id, tests, passed, failures=0, skipped=12, unexpected=0):
@@ -299,9 +294,27 @@ def test_pytest_regressions_use_executed_tests(make_record, current, status, met
         assert metric_name in {f.metric for f in result.findings}
 
 
+def legacy_pytest_record(make_record):
+    """A pre-D-8.2 pytest record, shaped like the provisional Phase 8 baseline: test_pass_rate
+    counted skips (689/701); no executed_tests / passed_tests / executed_pass_rate. Built here so
+    the test does not depend on whichever baseline is currently approved in the repository."""
+    record = make_record(
+        evaluation_type="pytest", run_id="legacy", cases=[], parameters={},
+        identity={"suite": "offline pytest"},
+        metrics={"test_count": metric(701),
+                 "tests_failed": metric(0, numerator=0, denominator=701),
+                 "expected_skips": metric(12, numerator=12, denominator=701),
+                 "unexpected_skips": metric(0, numerator=0, denominator=701),
+                 "test_pass_rate": metric(0.9829, numerator=689, denominator=701)})
+    record["identity"].pop("dataset_fingerprint")
+    record["comparability_key"] = short_hash(record["identity"])
+    record["dataset"]["case_count"] = None
+    return record
+
+
 def test_legacy_pytest_baseline_is_still_comparable_without_false_findings(make_record):
-    # The committed baseline predates D-8.2 (test_pass_rate counted skips; no executed_tests).
-    legacy = load_baseline(ROOT / "reports" / "baselines", "pytest")
+    # A baseline from before D-8.2 (test_pass_rate counted skips; no executed_tests).
+    legacy = legacy_pytest_record(make_record)
     assert "test_pass_rate" in legacy["metrics"] and "executed_tests" not in legacy["metrics"]
     current = pytest_record(make_record, "cur", tests=704, passed=691, skipped=13)
     result = compare_records(legacy, current, RULES)
