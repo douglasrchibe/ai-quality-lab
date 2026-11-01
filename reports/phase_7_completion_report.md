@@ -396,5 +396,8 @@ each with a regression test built from the input that exposed it.
 **Validation:**
 - `python -m pytest -q`: **577 passed, 12 skipped** (560 + 17 new review tests)
 - the 6 report-checked commands, run locally exactly as in the workflow: all met their expectations
-- GitHub run: pending the next push
+- GitHub run (commit `15dc532`): **PASS**
+  - [CI 41269262995](https://github.com/douglasrchibe/ai-quality-lab/actions/runs/41269262995): gate PASS, 15/15 checks met, 577 passed, 12 live tests skipped. All 6 report-checked
+    checks were confirmed by their JSON reports (no `report_problem`).
+  - [Ragas 41269262990](https://github.com/douglasrchibe/ai-quality-lab/actions/runs/41269262990): passed.
 
