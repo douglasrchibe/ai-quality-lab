@@ -55,7 +55,11 @@ quality gates. This is a learning/portfolio project for AI-evaluation QA automat
 | `.github/workflows/` | `ci.yml` (deterministic quality gates), `ragas-environment.yml` (path-filtered) |
 | `constraints/` | CI lock files (primary and Ragas environments), generated from CI `pip freeze` |
 | `ci/known_defects.json` | Open defects that only live runs can detect; listed in every CI summary |
-| `src/ai_quality_lab/reporting.py` | Placeholder: report files and baselines (Phase 8) |
+| `src/ai_quality_lab/reporting.py` | Markdown quality reports (CI job summary, artifacts, local report) |
+| `src/ai_quality_lab/observability/` | Phase 8: records, history (JSONL), regression rules/detection, baselines, CLI |
+| `ci/regression_rules.json` | Regression directions, tolerances, actions |
+| `reports/baselines/` | Approved baselines (committed): manifest, audit log, immutable records |
+| `docs/quality-observability.md` | Phase 8 data model, metrics, rules, baseline approval, limitations |
 | `tests/` | pytest tests, one file per module + `test_setup.py`; shared fixtures in `conftest.py` |
 | `evals/guardrail_cases.json` | Evaluation dataset shared by both engines (schema in `dataset.py` and README) |
 | `promptfoo/` | Promptfoo configs (normal + failure demo), thin Python shims, `assertions.js`, `run.mjs` launcher |
@@ -124,7 +128,7 @@ A milestone is done only when **all** of the following are true:
 | 5 | Real LLM + DeepEval evaluation | Done with conditions (Phase 5.5 audit): live-verified on 14 of 27 cases (+ LLM-015 in fail-open mode) + judge calibration; full run not completed |
 | 6 | RAG + deterministic retrieval evaluation + advisory Ragas | Done (see reports/phase_6_completion_report.md) |
 | 7 | GitHub Actions CI with deterministic quality gates | Done (see reports/phase_7_completion_report.md) |
-| 8 | Persistent reports and baseline trend comparison | Planned |
+| 8 | Quality observability: history, trends, regression detection, approved baselines | Implemented and validated locally; GitHub run pending (see Phase 8 report) |
 
 ## Evaluation engine rules (Phase 3)
 
@@ -253,3 +257,23 @@ A milestone is done only when **all** of the following are true:
   live run shows them fixed. CI summaries must not claim the AI system is safe.
 - Ragas is validated only in its own environment (`ragas-environment.yml`); never install it into
   the primary CI environment.
+
+## Quality observability rules (Phase 8)
+
+- Records are built from the reports existing tools write; never re-score or invent metrics. Every
+  metric keeps numerator/denominator and `kind` (deterministic | advisory). Unmeasured data goes
+  in `unmeasured` with a reason, never as 0.
+- Runs are compared only when `identity` matches (type, dataset/corpus fingerprints, model,
+  embedder). Otherwise ERROR; coverage shrinkage is still flagged. Never combine incompatible runs.
+- PASS / BLOCKED / ERROR (0 / 1 / 2). Missing or corrupt history, baselines, rules, or records are
+  ERROR, never PASS. Advisory (LLM-judge) metrics can never block (enforced in code).
+- Baselines change only via `observability baseline approve` with an approver and reason; never in
+  CI (`tests/test_ci_workflow.py` enforces it). Never use `--accept-regression` /
+  `--accept-identity-change` to make a run pass; never hand-edit `reports/baselines/`.
+- Rule tolerances in `ci/regression_rules.json` change only with a stated reason in
+  `docs/quality-observability.md`; never tune them to results.
+- Keep `ci/known_defects.json` (D-6.1 to D-6.4) open until a recorded live run shows otherwise.
+- Metric names, units (count | rate | score) and kinds are defined once in the metric catalog
+  (`records.py`); add new metrics there. A report whose claimed status disagrees with its own
+  results is refused, and approval re-checks content independently of `status`.
+

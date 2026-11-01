@@ -54,6 +54,7 @@ cancels superseded runs for the same PR or branch.
 | `promptfoo` | `-e .`, `npm ci` (pinned lockfile) | `promptfoo` → PASS; `promptfoo-failure-demo` → **BLOCKED** (exit 100); `engine-agreement` and `engine-agreement-failure-demo` → PASS (0 disagreements) |
 | `rag-deterministic` | `-e .` | `rag-retrieval` → PASS; `rag-mock` (gullible mock model) → PASS; `rag-demo-defenses-disabled` → **BLOCKED**; `rag-demo-retrieval-degraded` → **BLOCKED** |
 | `dependencies` | `requirements-llm.txt` (locked) | `pip-check` → PASS; `ragas-isolated` → PASS (no `ragas` or `instructor` in the primary environment); `pip freeze` recorded |
+| `observability` | `-e .` | `needs` the five quality jobs, runs `if: always()`. Records this run's reports, then `regression-vs-baseline` → PASS against the committed baselines (`reports/baselines/`); `regression-demo-fail-open`, `regression-demo-defenses-disabled`, `regression-demo-retrieval-degraded` → **BLOCKED**. All are report-checked (`--report`). Never approves a baseline. CI keeps the default one-record-per-type comparison (no `--run-id` / `--latest`). See [quality-observability.md](quality-observability.md). |
 | `quality-gate` | `-e .` | `needs` all jobs, runs `if: always()`. Downloads every `ci-*` artifact, writes the job summary, then `ci_summary gate` exits 0/1/2. |
 
 The five quality jobs run in parallel. Every check step after the first uses
@@ -138,6 +139,7 @@ failing step's status.
 | `ci-promptfoo` | `promptfoo-results.json`, `promptfoo-failure-demo-results.json`, `comparison-normal.json`, `comparison-failure-demo.json`, logs |
 | `ci-rag-deterministic` | `rag-retrieval.json`, `rag-mock.json`, both demo reports, logs |
 | `ci-dependencies` | `pip-freeze.txt`, logs, status files |
+| `ci-observability` | `history.jsonl` (this run's records), demo histories, `regression.json` / `.md`, demo comparison JSON, `quality-report.md`, logs |
 | `quality-gate-summary` | `summary.md` (also shown as the run's job summary) |
 
 All reports contain only synthetic data:
