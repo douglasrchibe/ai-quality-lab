@@ -227,3 +227,22 @@ def test_report_problem_is_shown_as_the_reason():
     bad = {**status("demo", "ERROR", "BLOCKED"), "report_problem": "report has errored cases"}
     outcome, reasons = overall_outcome({"custom-engine": "failure"}, [bad])
     assert outcome == "ERROR" and "report has errored cases" in reasons[0]
+
+
+def test_summary_shows_regression_result(artifacts):
+    (artifacts / "ci-observability").mkdir()
+    (artifacts / "ci-observability" / "regression.json").write_text(json.dumps({
+        "status": "BLOCKED", "problems": [],
+        "comparisons": [{"evaluation_type": "custom_engine", "status": "BLOCKED"}]}),
+        encoding="utf-8")
+    text = build_summary(artifacts, {"custom-engine": "success"},
+                         ROOT / "ci" / "known_defects.json")
+    assert "**Regression vs baseline:** BLOCKED against the approved baselines " \
+           "(custom_engine BLOCKED)" in text
+
+
+def test_summary_without_regression_report_says_unavailable(artifacts):
+    text = build_summary(artifacts, {"custom-engine": "success"},
+                         ROOT / "ci" / "known_defects.json")
+    assert "**Regression vs baseline:** report unavailable" in text
+    assert "D-6.4" in text  # every open known defect is listed, including ones without cases

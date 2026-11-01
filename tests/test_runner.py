@@ -250,3 +250,20 @@ def test_cli_invalid_dataset_exits_two(tmp_path, capsys):
 def test_cli_missing_dataset_exits_two(tmp_path, capsys):
     assert main(["--dataset", str(tmp_path / "nope.json")]) == 2
     assert "Dataset error" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("failure", ["none", "guardrail_fail_open"])
+def test_json_output_records_the_simulated_failure(repo_dataset_path, capsys, failure):
+    # Quality observability must never mistake a seeded-defect report for a normal run.
+    main(["--dataset", str(repo_dataset_path), "--json", "--simulate-failure", failure])
+    data = json.loads(capsys.readouterr().out)
+    assert data["simulated_failure"] == failure and data["total"] == 33
+
+
+def test_output_option_writes_a_utf8_report(repo_dataset_path, tmp_path, capsys):
+    # Reliable on Windows PowerShell, where '>' redirection may change the encoding (D-8.3).
+    out = tmp_path / "nested" / "report.json"
+    assert main(["--dataset", str(repo_dataset_path), "--output", str(out)]) == 0
+    data = json.loads(out.read_bytes().decode("utf-8"))  # strict UTF-8, no BOM
+    assert data["simulated_failure"] == "none" and data["total"] == 33
+    assert "Dataset:" in capsys.readouterr().out  # console summary unchanged without --json
