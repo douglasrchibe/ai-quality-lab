@@ -360,7 +360,7 @@ You made the repository public. Branch protection on `main` now requires the
 | Check | Result |
 |---|---|
 | `python -m pytest -q` (local, `.venv`) | **560 passed, 12 skipped** (556 + 4 lock-file tests) |
-| GitHub run with the lock files | **Pending the next push** |
+| GitHub run with the lock files (commit `e714c4c`) | **PASS**: [CI 41149923028](https://github.com/douglasrchibe/ai-quality-lab/actions/runs/41149923028) (gate PASS, 15/15 checks, 560 passed, 12 live skipped) and [Ragas 41149923116](https://github.com/douglasrchibe/ai-quality-lab/actions/runs/41149923116). Each run's `pip freeze` matches its lock file exactly. |
 
 **Trade-off:** CI is reproducible, but it no longer picks up upstream fixes or breakages on its
 own. Upgrades become deliberate changes, regenerated as described in `docs/ci-pipeline.md`.
