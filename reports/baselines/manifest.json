@@ -27,6 +27,15 @@
       "run_id": "20261101T211604Z-pytest-e48ee0",
       "sha256": "38c1b2b60be2ac2aa7d37caab824140b85e2560ca3d982b83159091a52e7a830"
     },
+    "rag_live": {
+      "approved_at": "2026-11-02T16:36:00Z",
+      "approved_by": "DC 11.2.26",
+      "commit": "7c75581864ffaca2f56513b305956e6476f2e632",
+      "file": "rag_live/official-2-run-5.json",
+      "reason": "<Test Approval>",
+      "run_id": "official-2-run-5",
+      "sha256": "397e2e22d684afc84f6080d0634cb180eb591796916fae8fc39903c92fe08a5d"
+    },
     "rag_mock": {
       "approved_at": "2026-11-01T21:21:35Z",
       "approved_by": "DC 11.1.26",
