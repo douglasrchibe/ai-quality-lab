@@ -246,3 +246,153 @@ def test_cli_approval_rejects_an_uncommitted_record_unless_overridden(tmp_path):
             "--run-id", "r", "--approved-by", "t", "--reason", "test", "--rules", str(RULES)]
     assert main(args) == 2
     assert main([*args, "--allow-uncommitted"]) == 0
+
+
+# --- Phase 9: calibrate, baseline review, live-batch (no live model) ----------------------------
+
+from ai_quality_lab.observability import live_batch  # noqa: E402
+from ai_quality_lab.observability.synthetic import example_batch, synthetic_run  # noqa: E402
+
+
+def write_history(path, records):
+    from ai_quality_lab.observability.history import append_records
+
+    append_records(path, records)
+    return path
+
+
+def test_calibrate_reports_and_exit_codes(tmp_path, capsys):
+    history = write_history(tmp_path / "h.jsonl", example_batch())
+    out_md, out_json = tmp_path / "cal.md", tmp_path / "cal.json"
+    assert main(["calibrate", "--batch", "synthetic", "--purpose", "official", "--history",
+                 str(history), "--rules", str(RULES), "--output-md", str(out_md),
+                 "--output-json", str(out_json)]) == 0
+    assert out_md.read_text(encoding="utf-8").startswith(
+        "# Live calibration: SYNTHETIC: not live evidence")
+    assert json.loads(out_json.read_text(encoding="utf-8"))["unstable_cases"] == [
+        "RAG-012", "RAG-016"]
+    blocked = write_history(tmp_path / "b.jsonl",
+                            [*example_batch(), synthetic_run("bad", safety=["RAG-001"])])
+    assert main(["calibrate", "--batch", "synthetic", "--purpose", "official", "--history",
+                 str(blocked), "--rules", str(RULES)]) == 1
+    assert main(["calibrate", "--batch", "missing", "--purpose", "official", "--history",
+                 str(history), "--rules", str(RULES)]) == 2
+
+
+def test_baseline_review_writes_nothing_and_explains_refusals(tmp_path, capsys):
+    history = write_history(tmp_path / "h.jsonl", example_batch())
+    baselines = tmp_path / "b"
+    code = main(["baseline", "review", "--run-id", "synthetic-run-1", "--calibration-batch",
+                 "synthetic", "--history", str(history), "--baselines", str(baselines),
+                 "--rules", str(RULES)])
+    out = capsys.readouterr().out
+    assert code == 2 and "Approval would be REFUSED" in out
+    assert "not an official, non-synthetic analysis" in out
+    assert "identity.model_digests" in out and "SYNTHETIC DATA" in out
+    assert not baselines.exists()
+
+
+def fake_configuration(env):
+    return {"model": "qwen2.5:3b", "generation": {"temperature": 0, "seed": 42,
+                                                  "max_tokens": 300},
+            "embed_model": "nomic-embed-text", "top_k": 4, "ollama_version": "0.40.13",
+            "model_digests": {"qwen2.5:3b": "a" * 64}, "dataset_fingerprint": "d",
+            "corpus_fingerprint": "c"}
+
+
+@pytest.fixture
+def live_env(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)  # reports/live/<batch> is created under tmp
+    monkeypatch.setattr(live_batch, "_configuration", fake_configuration)
+    monkeypatch.setattr(live_batch, "git_source", lambda: {
+        "commit": "abc1234", "branch": "main", "origin": "local", "ci_run_id": None,
+        "uncommitted_changes": False})
+    return tmp_path
+
+
+def batch_args(*extra, runs="3", purpose="official"):
+    return ["live-batch", "--runs", runs, "--batch", "cal-1", "--purpose", purpose,
+            "--history", "h.jsonl", *extra]
+
+
+def test_live_batch_check_prints_configuration_and_runs_nothing(live_env, capsys, monkeypatch):
+    monkeypatch.setattr(live_batch.subprocess, "run", lambda *a, **k: pytest.fail("ran"))
+    assert main(batch_args("--check")) == 0
+    out = capsys.readouterr().out
+    assert "ollama_version: 0.40.13" in out and "--llm ollama --embedder env" in out
+    assert "Check only: nothing was run." in out and not (live_env / "h.jsonl").exists()
+
+
+@pytest.mark.parametrize("extra, setup, message", [
+    (["--seeds", "1,2,3"], None, "exploratory only"),
+    ([], "dirty", "clean, committed working tree"),
+    ([], "existing batch", "already has runs of batch"),
+    ([], "existing reports", "never overwritten"),
+])
+def test_live_batch_refuses_unsafe_starts(live_env, monkeypatch, capsys, extra, setup, message):
+    if setup == "dirty":
+        monkeypatch.setattr(live_batch, "git_source", lambda: {
+            "commit": "abc1234", "origin": "local", "uncommitted_changes": True})
+    elif setup == "existing batch":
+        run = synthetic_run("x", batch="cal-1")
+        run["source"]["origin"] = "local"
+        write_history(live_env / "h.jsonl", [run])
+    elif setup == "existing reports":
+        (live_env / "reports" / "live" / "cal-1").mkdir(parents=True)
+        (live_env / "reports" / "live" / "cal-1" / "run-1.json").write_text("{}")
+    assert main(batch_args(*extra)) == 2
+    assert message in capsys.readouterr().err
+
+
+def test_live_batch_records_every_completed_run_and_reports_incomplete_ones(
+        live_env, monkeypatch, capsys):
+    exits = iter([0, 2, 1])  # a PASS run, a crashed run, a BLOCKED run
+
+    def fake_run(command, env):
+        code = next(exits)
+        if code != 2:
+            output = Path(command[command.index("--output") + 1])
+            output.write_text("{}", encoding="utf-8")
+
+        class Done:
+            returncode = code
+        return Done()
+
+    recorded = []
+
+    def fake_build(kind, report, run_id, source, note):
+        record = synthetic_run(run_id, batch=source["batch"])
+        record["source"].update(origin="local", note=note)
+        recorded.append(run_id)
+        return record
+
+    monkeypatch.setattr(live_batch.subprocess, "run", fake_run)
+    monkeypatch.setattr(live_batch, "build_record", fake_build)
+    assert main(batch_args()) == 2  # not every run completed
+    out = capsys.readouterr().out
+    assert recorded == ["cal-1-run-1", "cal-1-run-3"]  # the BLOCKED run is recorded, not dropped
+    assert "INCOMPLETE: run 2 (exit 2); not recorded" in out
+    assert "2 recorded" in out and "1 incomplete or stopped" in out
+
+
+def test_live_batch_stops_if_the_model_build_changes(live_env, monkeypatch, capsys):
+    configs = iter([fake_configuration({}),
+                    {**fake_configuration({}), "model_digests": {"qwen2.5:3b": "f" * 64}}])
+    monkeypatch.setattr(live_batch, "_configuration", lambda env: next(configs))
+
+    def fake_run(command, env):
+        Path(command[command.index("--output") + 1]).write_text("{}", encoding="utf-8")
+
+        class Done:
+            returncode = 0
+        return Done()
+
+    def fake_build(kind, report, run_id, source, note):
+        record = synthetic_run(run_id, batch=source["batch"])
+        record["source"]["origin"] = "local"
+        return record
+
+    monkeypatch.setattr(live_batch.subprocess, "run", fake_run)
+    monkeypatch.setattr(live_batch, "build_record", fake_build)
+    assert main(batch_args()) == 2
+    assert "model build or Ollama version changed" in capsys.readouterr().out

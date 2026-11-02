@@ -45,7 +45,10 @@ DEFAULT_JUDGE_MAX_TOKENS = 1024
 """Cap on judge output. Small local models constrained to JSON can loop without stopping; the cap
 turns that hang into a fast, reported judge ERROR."""
 GENERATION_SEED = 42
-"""Fixed seed with temperature 0 for the most repeatable output a provider allows (not exact)."""
+"""Default seed. With temperature 0 it gives the most repeatable output a provider allows (not
+exact). ``AIQL_LLM_SEED`` overrides it, e.g. for an exploratory seed-sensitivity batch; the seed is
+recorded in every live run's identity, so runs with different seeds are never silently compared."""
+GENERATION_TEMPERATURE = 0
 
 
 # --- Errors -------------------------------------------------------------------------------------
@@ -78,6 +81,12 @@ class LLMSettings:
     api_key: str | None = field(default=None, repr=False)  # never shown in repr or logs
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
     max_tokens: int = DEFAULT_MAX_TOKENS
+    seed: int = GENERATION_SEED
+
+    def generation_settings(self) -> dict[str, int]:
+        """The sampling settings sent with every request (recorded in live run identity)."""
+        return {"temperature": GENERATION_TEMPERATURE, "seed": self.seed,
+                "max_tokens": self.max_tokens}
 
     @property
     def chat_completions_url(self) -> str:
@@ -133,6 +142,7 @@ class LLMSettings:
             api_key=api_key,
             timeout_seconds=_positive_number(env, f"{prefix}TIMEOUT", DEFAULT_TIMEOUT_SECONDS),
             max_tokens=int(_positive_number(env, f"{prefix}MAX_TOKENS", DEFAULT_MAX_TOKENS)),
+            seed=_non_negative_int(env, f"{prefix}SEED", GENERATION_SEED),
         )
 
     @classmethod
@@ -175,6 +185,15 @@ def _positive_number(env: Mapping[str, str], key: str, default: float) -> float:
     if value <= 0:
         raise LLMConfigurationError(f"{key} must be greater than 0, got {raw!r}.")
     return value
+
+
+def _non_negative_int(env: Mapping[str, str], key: str, default: int) -> int:
+    raw = env.get(key, "").strip()
+    if not raw:
+        return default
+    if not raw.isdigit():
+        raise LLMConfigurationError(f"{key} must be a non-negative integer, got {raw!r}.")
+    return int(raw)
 
 
 def load_env_file(
@@ -230,9 +249,7 @@ class OpenAICompatibleClient:
         payload = {
             "model": self.settings.model,
             "messages": list(messages),
-            "temperature": 0,
-            "seed": GENERATION_SEED,
-            "max_tokens": self.settings.max_tokens,
+            **self.settings.generation_settings(),
             "stream": False,
         }
         body = self._post(self.settings.chat_completions_url, payload)
@@ -309,6 +326,36 @@ def list_ollama_models(settings: LLMSettings) -> list[str]:
         reason = getattr(exc, "reason", exc)
         raise LLMUnavailableError(OpenAICompatibleClient(settings)._unreachable_message(reason))
     return [m.get("name", "") for m in data.get("models", [])]
+
+
+def ollama_provenance(base_url: str, models: Sequence[str]) -> dict[str, Any]:
+    """Ollama server version and the exact digest of each model, for live-run identity.
+
+    A model tag such as ``qwen2.5:3b`` can point to a different build after a re-pull, and an Ollama
+    upgrade can change outputs; the digest and version make either change visible. A model that
+    is not pulled is an error (the run could not be attributed to a specific build).
+    """
+    root = base_url.rstrip("/")
+
+    def get(path: str) -> Any:
+        try:
+            with urllib.request.urlopen(f"{root}{path}", timeout=10) as reply:
+                return json.loads(reply.read().decode("utf-8"))
+        except (urllib.error.URLError, TimeoutError, socket.timeout, ValueError) as exc:
+            raise LLMUnavailableError(f"Cannot read Ollama {path} at {root}: "
+                                      f"{getattr(exc, 'reason', exc)}") from None
+
+    version = get("/api/version").get("version")
+    tags = {m.get("name"): m.get("digest") for m in get("/api/tags").get("models", [])}
+    digests = {}
+    for model in models:
+        name = model if ":" in model else f"{model}:latest"
+        if not tags.get(name):
+            raise LLMUnavailableError(f"Ollama has no digest for model {name!r}; is it pulled?")
+        digests[name] = tags[name]
+    if not version:
+        raise LLMUnavailableError(f"Ollama at {root} did not report its version.")
+    return {"ollama_version": version, "model_digests": digests}
 
 
 def check_model_available(settings: LLMSettings) -> None:

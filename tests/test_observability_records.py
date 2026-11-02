@@ -417,3 +417,75 @@ def test_valid_metrics_by_unit(make_record, name, value, num, den, kind):
     record = make_record()
     record["metrics"][name] = metric(value, MetricKind(kind), num, den)
     assert validate_record(record) == []
+
+
+# --- Phase 9: live identity and per-case flags --------------------------------------------------
+
+LIVE_PROVENANCE = {"generation": {"temperature": 0, "seed": 42, "max_tokens": 300},
+                   "provenance": {"ollama_version": "0.40.13",
+                                  "model_digests": {"qwen2.5:3b": "a" * 64}}}
+
+
+def live_report(rag_reports, **overrides):
+    report = copy.deepcopy(rag_reports["mock"])
+    report["configuration"].update(llm="ollama:qwen2.5:3b", embedder="ollama:nomic-embed-text",
+                                   **copy.deepcopy(LIVE_PROVENANCE))
+    for key, value in overrides.items():
+        report["configuration"][key] = value
+    return report
+
+
+def test_live_identity_includes_sampling_ollama_version_and_digests(tmp_path, rag_reports):
+    identity = rag_record(tmp_path, live_report(rag_reports))["identity"]
+    assert identity["generation"] == {"temperature": 0, "seed": 42, "max_tokens": 300}
+    assert identity["ollama_version"] == "0.40.13"
+    assert identity["model_digests"] == {"qwen2.5:3b": "a" * 64}
+
+
+@pytest.mark.parametrize("change", [
+    {"generation": {"temperature": 0, "seed": 7, "max_tokens": 300}},
+    {"provenance": {"ollama_version": "0.41.0", "model_digests": {"qwen2.5:3b": "a" * 64}}},
+    {"provenance": {"ollama_version": "0.40.13", "model_digests": {"qwen2.5:3b": "c" * 64}}},
+])
+def test_seed_version_or_digest_change_makes_live_runs_incomparable(tmp_path, rag_reports,
+                                                                       change):
+    base = rag_record(tmp_path, live_report(rag_reports))
+    changed = rag_record(tmp_path, live_report(rag_reports, **change))
+    assert base["comparability_key"] != changed["comparability_key"]
+
+
+def test_pre_phase_9_live_report_is_never_comparable_with_new_runs(tmp_path, rag_reports):
+    old = copy.deepcopy(rag_reports["mock"])
+    old["configuration"].update(llm="ollama:qwen2.5:3b", embedder="ollama:nomic-embed-text")
+    old_record = rag_record(tmp_path, old)
+    assert old_record["identity"]["model_digests"] is None
+    assert old_record["comparability_key"] != rag_record(
+        tmp_path, live_report(rag_reports))["comparability_key"]
+
+
+def test_mock_and_retrieval_identity_are_unchanged_by_phase_9(tmp_path, rag_reports):
+    identity = rag_record(tmp_path, rag_reports["mock"])["identity"]
+    assert set(identity) == {"evaluation_type", "dataset_fingerprint", "corpus_fingerprint",
+                             "llm", "embedder"}
+
+
+def test_generation_runs_carry_per_case_flags_without_text(tmp_path, rag_reports):
+    record = rag_record(tmp_path, rag_reports["mock"])
+    flags = {k for c in record["cases"] for k in c} - {"id", "outcome", "severity"}
+    assert flags == {"answerable", "abstained", "safety_failure"}
+    assert sum(c["answerable"] for c in record["cases"]) == 19
+    assert sum(c["abstained"] and c["answerable"] for c in record["cases"]) == \
+        record["metrics"]["answerable_abstention_rate"]["numerator"]
+    retrieval = rag_record(tmp_path, rag_reports["retrieval"])
+    assert {k for c in retrieval["cases"] for k in c} == {"id", "outcome", "severity"}
+
+
+@pytest.mark.parametrize("mutate, message", [
+    (lambda r: r["cases"][0].update(abstained="yes"), "must be true/false"),
+    (lambda r: r["source"].update(origin="unknown"), "source.origin"),
+    (lambda r: r["source"].update(purpose="production"), "source.purpose"),
+])
+def test_phase_9_fields_are_validated(make_record, mutate, message):
+    record = make_record()
+    mutate(record)
+    assert any(message in e for e in validate_record(record))

@@ -50,8 +50,10 @@ class MetricKind(str, Enum):
 
 
 STATUSES = ("PASS", "BLOCKED", "ERROR")
+ORIGINS = ("local", "github-actions", "synthetic")
 SEVERITIES = ("critical", "high", "medium", "low")
 CASE_OUTCOMES = ("PASS", "FAIL", "ERROR")
+CASE_FLAGS = ("answerable", "abstained", "safety_failure")  # optional, RAG generation runs only
 TIMESTAMP_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 TIMESTAMP_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
@@ -328,6 +330,14 @@ def build_rag(report: Mapping[str, Any], dataset: Path, knowledge_base: Path) ->
     cases = [_case(r.get("id"), r.get("outcome"), r.get("severity")) for r in results]
     _check_case_ids(cases, [c.id for c in dataset_cases], dataset)
     evaluation_type = rag_type(config)
+    if evaluation_type is not EvaluationType.RAG_RETRIEVAL:
+        # Per-case behaviour flags for repeated-run consistency analysis. Only booleans are kept:
+        # never the question, the retrieved text, or the answer.
+        for case, result in zip(cases, results):
+            case["answerable"] = result.get("expected_behavior") == "answer"
+            case["abstained"] = _abstained(result, is_abstention)
+            case["safety_failure"] = any(f.get("type") in SAFETY_FAILURE_TYPES
+                                         for f in result.get("failures", []))
 
     metrics: dict[str, Any] = {}
     unmeasured: dict[str, str] = {}
@@ -375,7 +385,9 @@ def build_rag(report: Mapping[str, Any], dataset: Path, knowledge_base: Path) ->
         "dataset": {"path": dataset.as_posix(), "fingerprint": fingerprint,
                     "case_count": len(dataset_cases), "corpus_fingerprint": corpus},
         "identity_extra": {"dataset_fingerprint": fingerprint, "corpus_fingerprint": corpus,
-                           "llm": config["llm"], "embedder": config["embedder"]},
+                           "llm": config["llm"], "embedder": config["embedder"],
+                           **(live_identity(config)
+                              if evaluation_type is EvaluationType.RAG_LIVE else {})},
         "parameters": {"top_k": config["top_k"], "chunk_size": config["chunk_size"],
                        "overlap": config["overlap"],
                        "simulated_failure": config["simulated_failure"]},
@@ -389,6 +401,18 @@ def build_rag(report: Mapping[str, Any], dataset: Path, knowledge_base: Path) ->
         "deterministic": evaluation_type is not EvaluationType.RAG_LIVE,
         "evaluation_type": evaluation_type,
     }
+
+
+def live_identity(configuration: Mapping[str, Any]) -> dict[str, Any]:
+    """Live-run identity: sampling settings, Ollama version, exact model digests.
+
+    Reports written before Phase 9 have none of these, so their records carry ``None`` here and are
+    never comparable with newer live runs (a historical run is not silently mixed with new ones).
+    """
+    provenance = configuration.get("provenance") or {}
+    return {"generation": configuration.get("generation"),
+            "ollama_version": provenance.get("ollama_version"),
+            "model_digests": provenance.get("model_digests")}
 
 
 def _abstained(result: Mapping[str, Any], is_abstention: Callable[[str], bool]) -> bool:
@@ -559,6 +583,10 @@ def validate_record(record: Any) -> list[str]:
         errors.append("comparability_key does not match identity (edited or corrupted record)")
     if record["status"] not in STATUSES:
         errors.append(f"status must be one of {STATUSES}")
+    if record["source"].get("origin") not in (None, *ORIGINS):
+        errors.append(f"source.origin must be one of {ORIGINS} or absent")
+    if record["source"].get("purpose") not in (None, "official", "exploratory"):
+        errors.append("source.purpose must be 'official', 'exploratory' or absent")
     for name, m in record["metrics"].items():
         errors += [f"metric {name!r}: {e}" for e in _metric_errors(name, m)]
     overlap = set(record["metrics"]) & set(record["unmeasured"])
@@ -569,6 +597,10 @@ def validate_record(record: Any) -> list[str]:
                 or case.get("outcome") not in CASE_OUTCOMES
                 or case.get("severity") not in SEVERITIES):
             errors.append(f"invalid case entry {case!r}")
+            break
+        flags = {k: case[k] for k in CASE_FLAGS if k in case}
+        if any(not isinstance(v, bool) for v in flags.values()):
+            errors.append(f"case {case['id']}: flags {sorted(flags)} must be true/false")
             break
     ids = [c.get("id") for c in record["cases"] if isinstance(c, dict)]
     if len(ids) != len(set(ids)):

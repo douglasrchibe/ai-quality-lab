@@ -9,6 +9,12 @@
                      [--accept-identity-change] [--accept-regression] [--allow-uncommitted]
     baseline show [--baselines DIR]
     baseline verify [--baselines DIR]   (hashes, schema, manifest vs audit log; exit 0 or 2)
+    baseline review --run-id ID [--calibration-batch LABEL]   (what approval would accept)
+    calibrate (--batch LABEL | --run-id ID ...) --purpose official|exploratory
+              [--output-json F] [--output-md F]        (exit 0, 1 if BLOCKING, 2 ERROR)
+    live-batch --runs N --batch LABEL --purpose official|exploratory [--seeds S1,S2,...] [--check]
+
+record also takes --batch LABEL and --purpose official|exploratory (repeated live runs).
 
 Exit codes: 0 PASS, 1 BLOCKED (a release-blocking regression), 2 ERROR (could not compare
 reliably: missing or corrupt history/baseline/rules, invalid records, rejected approval).
@@ -51,7 +57,13 @@ from ai_quality_lab.observability.regression import (
     load_rules,
     select_records,
 )
-from ai_quality_lab.reporting import TREND_COLUMNS, render_quality_report, render_run_comparison
+from ai_quality_lab.observability.calibration import CalibrationError, analyze_runs, select_runs
+from ai_quality_lab.reporting import (
+    TREND_COLUMNS,
+    render_calibration,
+    render_quality_report,
+    render_run_comparison,
+)
 
 EXIT = {"PASS": 0, "BLOCKED": 1, "ERROR": 2}
 KNOWN_DEFECTS = Path("ci") / "known_defects.json"
@@ -74,6 +86,10 @@ def cmd_record(args: argparse.Namespace) -> int:
     if args.commit is not None:
         # The report came from that commit, not from this working tree: its state is unknown.
         source["uncommitted_changes"] = None
+    if args.batch:
+        source["batch"] = args.batch
+    if args.purpose:
+        source["purpose"] = args.purpose
     record = build_record(args.kind, args.report, dataset=args.dataset,
                           knowledge_base=args.knowledge_base, run_id=args.run_id, note=args.note,
                           source=source)
@@ -111,6 +127,29 @@ def cmd_compare(args: argparse.Namespace) -> int:
     _write(args.output_md, text)
     print(text)
     return EXIT[data["status"]]
+
+
+def _calibration(history_path: Path, batch: str | None, run_ids: list[str], purpose: str,
+                 rules_path: Path) -> dict:
+    runs = select_runs(read_history(history_path), run_ids, batch)
+    return analyze_runs(runs, purpose, load_rules(rules_path))
+
+
+def cmd_calibrate(args: argparse.Namespace) -> int:
+    run_ids = [i.strip() for value in args.run_id for i in value.split(",") if i.strip()]
+    analysis = _calibration(args.history, args.batch, run_ids, args.purpose, args.rules)
+    text = render_calibration(analysis)
+    _write(args.output_json, json.dumps(analysis, indent=2, ensure_ascii=False) + "\n")
+    _write(args.output_md, text)
+    print(text)
+    return EXIT["BLOCKED"] if analysis["blocking"] else EXIT["PASS"]
+
+
+def cmd_live_batch(args: argparse.Namespace) -> int:
+    from ai_quality_lab.observability.live_batch import run_live_batch
+
+    return run_live_batch(runs=args.runs, batch=args.batch, purpose=args.purpose,
+                          seeds=args.seeds, history=args.history, check_only=args.check)
 
 
 def cmd_trend(args: argparse.Namespace) -> int:
@@ -160,16 +199,49 @@ def cmd_baseline(args: argparse.Namespace) -> int:
     matches = [r for r in read_history(args.history) if r["run_id"] == args.run_id]
     if not matches:
         raise BaselineError(f"run {args.run_id!r} is not in {args.history}")
+    # The calibration is always recomputed from the history, never read from an editable file.
+    calibration = (_calibration(args.history, args.calibration_batch, [], "official", args.rules)
+                   if args.calibration_batch else None)
+    if args.baseline_command == "review":
+        return _review(matches[0], calibration)
     entry = approve_baseline(args.baselines, matches[0], approved_by=args.approved_by,
                              reason=args.reason, rules=load_rules(args.rules),
                              accept_identity_change=args.accept_identity_change,
                              accept_regression=args.accept_regression,
-                             allow_uncommitted=args.allow_uncommitted)
+                             allow_uncommitted=args.allow_uncommitted,
+                             calibration=calibration)
     print(f"approved {entry['evaluation_type']} baseline {entry['run_id']} "
           f"(previous: {entry['previous_run_id']}; flags: {entry['flags'] or 'none'})")
     if entry["identity_change"]:
         print("identity change accepted: " + describe_identity_change(entry["identity_change"]))
     return 0
+
+
+def _review(record: dict, calibration: dict | None) -> int:
+    """Show exactly what an approval would accept; nothing is written."""
+    from ai_quality_lab.observability.baselines import _calibration_problems, quality_blockers
+
+    print(f"# Baseline review: {record['evaluation_type']} run {record['run_id']}\n")
+    print(f"- status {record['status']}; commit {record['source'].get('commit')}; uncommitted "
+          f"changes {record['source'].get('uncommitted_changes')}; origin "
+          f"{record['source'].get('origin')}; batch {record['source'].get('batch')}; purpose "
+          f"{record['source'].get('purpose')}")
+    for key in sorted(record["identity"]):
+        print(f"- identity.{key}: {record['identity'][key]}")
+    for name in sorted(record["metrics"]):
+        m = record["metrics"][name]
+        print(f"- {name}: {m['value']} (numerator {m['numerator']}, denominator "
+              f"{m['denominator']}, {m['kind']})")
+    problems = quality_blockers(record) + _calibration_problems(record, calibration)
+    if calibration:
+        print("\n" + render_calibration(calibration))
+    print("Known open defects: see ci/known_defects.json (D-6.1 over-abstention is tracked by "
+          "rag_live over_abstention_rate).")
+    if problems:
+        print("\nApproval would be REFUSED:\n" + "\n".join(f"- {p}" for p in problems))
+        return EXIT["ERROR"]
+    print("\nNo blocking problem found. Approval remains the owner's decision.")
+    return EXIT["PASS"]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -193,6 +265,10 @@ def build_parser() -> argparse.ArgumentParser:
     record.add_argument("--commit", help="commit that produced the report ('unknown' if not "
                         "known); default: the current checkout")
     record.add_argument("--branch", help="branch that produced the report ('unknown' if not known)")
+    record.add_argument("--batch", help="label of a repeated-run batch (live calibration)")
+    record.add_argument("--purpose", choices=["official", "exploratory"],
+                        help="official = eligible for calibration and baselines; exploratory = "
+                        "never used for either")
     common(record)
 
     compare = sub.add_parser("compare", help="compare a run's records with approved baselines")
@@ -212,6 +288,24 @@ def build_parser() -> argparse.ArgumentParser:
     trend.add_argument("--last", type=int, default=10)
     common(trend)
 
+    calibrate = sub.add_parser("calibrate", help="analyse repeated runs (variation, unstable "
+                               "cases, critical failures, tolerance proposals)")
+    calibrate.add_argument("--batch")
+    calibrate.add_argument("--run-id", action="append", default=[])
+    calibrate.add_argument("--purpose", required=True, choices=["official", "exploratory"])
+    calibrate.add_argument("--output-json", type=Path)
+    calibrate.add_argument("--output-md", type=Path)
+    common(calibrate)
+
+    live = sub.add_parser("live-batch", help="run and record N live RAG evaluations (local Ollama)")
+    live.add_argument("--runs", type=int, required=True)
+    live.add_argument("--batch", required=True)
+    live.add_argument("--purpose", required=True, choices=["official", "exploratory"])
+    live.add_argument("--seeds", help="exploratory only: one seed per run, comma-separated")
+    live.add_argument("--check", action="store_true",
+                      help="verify and print the configuration and commands; run nothing")
+    common(live)
+
     report = sub.add_parser("report", help="write the full Markdown quality report")
     report.add_argument("--output", type=Path, default=Path("reports") / "quality" /
                         "quality-report.md")
@@ -230,6 +324,13 @@ def build_parser() -> argparse.ArgumentParser:
     approve.add_argument("--allow-uncommitted", action="store_true",
                          help="approve a run recorded with uncommitted changes or an unknown "
                          "commit (written to the audit log)")
+    approve.add_argument("--calibration-batch",
+                         help="rag_live only: the official batch whose recomputed calibration "
+                         "supports this baseline")
+    review = bsub.add_parser("review", help="show what an approval would accept (writes nothing)")
+    review.add_argument("--run-id", required=True)
+    review.add_argument("--calibration-batch")
+    common(review)
     common(approve)
     show = bsub.add_parser("show")
     common(show, history=False)
@@ -239,14 +340,16 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 COMMANDS = {"record": cmd_record, "compare": cmd_compare, "trend": cmd_trend,
-            "report": cmd_report, "baseline": cmd_baseline}
+            "report": cmd_report, "baseline": cmd_baseline, "calibrate": cmd_calibrate,
+            "live-batch": cmd_live_batch}
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         return COMMANDS[args.command](args)
-    except (RecordError, HistoryError, BaselineError, RulesError, OSError) as exc:
+    except (RecordError, HistoryError, BaselineError, RulesError, CalibrationError,
+            OSError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return EXIT["ERROR"]
 

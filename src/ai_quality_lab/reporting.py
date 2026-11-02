@@ -233,3 +233,84 @@ def _defects_section(path: Path | None, latest: Mapping[str, Mapping[str, Any]])
             measurement = f" Latest {tracked.get('evaluation_type')} {tracked['metric']}: {value}."
         lines.append(f"- **{d.get('id')} ({d.get('severity')}):** {d.get('title')}.{measurement}")
     return lines + [""]
+
+
+# --- Phase 9: repeated-run calibration ----------------------------------------------------------
+
+
+def _fmt_values(summary: Mapping[str, Any]) -> str:
+    values = summary["values"]
+    if summary["unit"] == "rate" and all(n is not None for n in summary["numerators"]):
+        return ", ".join(f"{n}/{summary['denominator']}" for n in summary["numerators"])
+    return ", ".join(f"{v:g}" if isinstance(v, float) else str(v) for v in values)
+
+
+def render_calibration(analysis: Mapping[str, Any]) -> str:
+    """Markdown for calibration.analyze_runs(): what varied, what is unstable, what blocks."""
+    n = analysis["n_runs"]
+    lines = [f"# Live calibration: {analysis['label']}", "",
+             f"**{n} run(s)** of `{analysis['evaluation_type']}` · batches "
+             f"{', '.join(analysis['batches'])} · commits {', '.join(analysis['commits'])} · clean "
+             f"provenance: {'yes' if analysis['clean_provenance'] else '**no**'}", ""]
+    if analysis["synthetic"]:
+        lines += ["> **SYNTHETIC DATA.** These records were generated for illustration and tests. "
+                  "They are not evidence about any live model.", ""]
+    identity = analysis["identity"]
+    lines += ["## Configuration (identical across runs)", "",
+              "| Field | Value |", "|---|---|"]
+    lines += [f"| {k} | `{identity[k]}` |" for k in sorted(identity)]
+    if analysis["varied"]:
+        lines.append(f"| seed (varied, exploratory) | {', '.join(analysis['varied'])} |")
+    lines += ["", f"## Critical and safety failures: {analysis['verdict']}", ""]
+    lines += ([f"- **BLOCKING:** {item}" for item in analysis["blocking"]] or
+              ["None in any run. (Any single critical or safety failure in any run blocks; "
+               "averages never hide one.)"])
+    lines += ["", "## Run-to-run variation", "",
+              "| Metric | Unit | Denominator | Per-run values | Mean | Median | Min–max | Range "
+              "| SD | 95% CI of mean |", "|---|---|---|---|---|---|---|---|---|---|"]
+    for s in analysis["metrics"]:
+        if s["status"] != "ok":
+            lines.append(f"| {s['metric']} | {s['unit']} | {s.get('denominator', '—')} | "
+                         f"**{s['status']}**: {s['note']} | | | | | | |")
+            continue
+        sd = s.get("sd", "—")
+        ci = s.get("mean_ci95")
+        no_ci = "not informative (no variation)" if "sd" in s else "— (fewer than 2 runs)"
+        lines.append(f"| {s['metric']}{' *advisory*' if s['kind'] == 'advisory' else ''} | "
+                     f"{s['unit']} | {'—' if s['denominator'] is None else s['denominator']} | "
+                     f"{_fmt_values(s)} | {s['mean']:g} | "
+                     f"{s['median']:g} | {s['min']:g}–{s['max']:g} | {s['range']:g} | {sd} | "
+                     f"{f'{ci[0]:g}–{ci[1]:g}' if ci else no_ci} |")
+    lines += ["", "Intervals use Student t on run-level values (df = n − 1). They are approximate "
+                  "and wide at small n; cases repeat across runs, so no pooled binomial interval "
+                  "is given.", ""]
+    unstable = [c for c in analysis["cases"] if c["id"] in analysis["unstable_cases"]]
+    lines += [f"## Per-case consistency: {len(unstable)} unstable of {len(analysis['cases'])}",
+              ""]
+    lines += ["| Case | Severity | Failed / runs | Pattern | Fail probability 95% (Wilson) | "
+              "Abstained | Safety failures |", "|---|---|---|---|---|---|---|"]
+    shown = [c for c in analysis["cases"] if c["outcome_pattern"] != "consistent_pass"
+             or c.get("abstained") or c.get("safety_failures")]
+    for c in shown:
+        ci = c["fail_probability_ci95"]
+        lines.append(f"| {c['id']} | {c['severity']} | {c['fail']}/{c['runs']} | "
+                     f"{c['outcome_pattern']} | {ci[0]:g}–{ci[1]:g} | "
+                     f"{c.get('abstained', '—')} ({c.get('abstention_pattern', 'n/a')}) | "
+                     f"{c.get('safety_failures', '—')} |")
+    passing = len(analysis["cases"]) - len(shown)
+    lines += ["", f"{passing} case(s) passed in every run without abstaining (not listed).", ""]
+    if analysis["expected_pass_rate_sd_from_cases"] is not None:
+        lines += [f"Cross-check: per-case failure frequencies imply a pass-rate SD of about "
+                  f"{analysis['expected_pass_rate_sd_from_cases']} if cases varied independently.",
+                  ""]
+    lines += ["## Tolerance proposals (for owner review; rules are not changed)", "",
+              "| Metric | Current live tolerance | Proposed | One case = | Basis |",
+              "|---|---|---|---|---|"]
+    for t in analysis["tolerance_proposals"]:
+        current = t["current_live_tolerance"] if t["current_live_tolerance"] is not None \
+            else f"{t['current_tolerance']} (no live value)"
+        proposed = "—" if t["proposed"] is None else t["proposed"]
+        lines.append(f"| {t['metric']} | {current} | {proposed} | {t.get('one_case_unit', '—')} "
+                     f"| {t['basis']} |")
+    lines += ["", "## Limitations", "", *[f"- {text}" for text in analysis["limitations"]], ""]
+    return "\n".join(lines) + "\n"
