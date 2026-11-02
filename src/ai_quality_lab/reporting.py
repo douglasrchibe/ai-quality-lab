@@ -310,7 +310,9 @@ def render_calibration(analysis: Mapping[str, Any]) -> str:
         current = t["current_live_tolerance"] if t["current_live_tolerance"] is not None \
             else f"{t['current_tolerance']} (no live value)"
         proposed = "—" if t["proposed"] is None else t["proposed"]
-        lines.append(f"| {t['metric']} | {current} | {proposed} | {t.get('one_case_unit', '—')} "
+        one_case = t.get("one_case_unit")
+        lines.append(f"| {t['metric']} | {current} | {proposed} | "
+                     f"{'—' if one_case is None else one_case} "
                      f"| {t['basis']} |")
     lines += ["", "## Limitations", "", *[f"- {text}" for text in analysis["limitations"]], ""]
     return "\n".join(lines) + "\n"

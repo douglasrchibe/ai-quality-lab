@@ -242,3 +242,34 @@ def test_synthetic_records_are_valid_and_labelled():
         assert validate_record(run) == [] and run["source"]["origin"] == "synthetic"
     assert analyze(example_batch())["label"] == "SYNTHETIC: not live evidence"
     assert short_hash(example_batch()[0]["identity"]) == example_batch()[0]["comparability_key"]
+
+
+# --- Stage C audit fixes ------------------------------------------------------------------------
+
+
+def test_errored_case_in_any_run_is_blocking():
+    runs = example_batch()
+    runs[3]["cases"][20]["outcome"] = "ERROR"  # a medium case timed out in one run
+    runs[3]["metrics"]["error_count"] = metric(1, numerator=1, denominator=25)
+    analysis = analyze(runs)
+    assert analysis["verdict"] == "BLOCKING"
+    assert "synthetic-run-4: case RAG-021 ERROR (incomplete measurement)" in analysis["blocking"]
+    assert "synthetic-run-4: error_count = 1" in analysis["blocking"]
+
+
+def test_official_calibration_needs_a_single_commit():
+    runs = example_batch()
+    runs[4]["source"]["commit"] = "different"
+    assert any("runs from one commit" in p for p in check_runs(runs, "official"))
+    exploratory = [synthetic_run(f"e{i}", purpose="exploratory", batch="x") for i in range(3)]
+    exploratory[0]["source"]["commit"] = "different"
+    assert not any("one commit" in p for p in check_runs(exploratory, "exploratory"))
+
+
+def test_limitations_state_exchangeability_and_greedy_decoding():
+    official = analyze(example_batch())
+    assert any("exchangeable" in text for text in official["limitations"])
+    exploratory = analyze([synthetic_run(f"e{i}", seed=i, purpose="exploratory", batch="x")
+                           for i in range(5)], "exploratory")
+    assert any("decoding is greedy" in text for text in exploratory["limitations"])
+    assert not any("decoding is greedy" in text for text in official["limitations"])

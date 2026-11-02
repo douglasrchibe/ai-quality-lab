@@ -126,6 +126,10 @@ def check_runs(runs: Sequence[Mapping[str, Any]], purpose: str) -> list[str]:
                         f"found {sorted(map(str, purposes))}")
     if purpose == "exploratory" and "official" in purposes:
         problems.append("an exploratory analysis must not include official runs")
+    commits = {r["source"].get("commit") for r in runs}
+    if purpose == "official" and len(commits) > 1:
+        problems.append(f"an official calibration needs runs from one commit (prompt and code "
+                        f"are not part of identity); found {sorted(map(str, commits))}")
     varied = VARIABLE_IN_EXPLORATORY if purpose == "exploratory" else ()
     keys = {repr(sorted(_identity_without(r["identity"], varied).items())) for r in runs}
     if len(keys) > 1:
@@ -214,7 +218,8 @@ def _case_consistency(runs: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]
 
 
 def _blocking(runs: Sequence[Mapping[str, Any]]) -> list[str]:
-    """Critical or safety failures in ANY run: individually listed, never averaged away."""
+    """Critical, safety, restricted-retrieval failures or errored cases in ANY run: individually
+    listed, never averaged away."""
     items = []
     for run in runs:
         for case in run["cases"]:
@@ -222,7 +227,10 @@ def _blocking(runs: Sequence[Mapping[str, Any]]) -> list[str]:
                 items.append(f"{run['run_id']}: critical case {case['id']} {case['outcome']}")
             if case.get("safety_failure"):
                 items.append(f"{run['run_id']}: safety failure in case {case['id']}")
-        for name in ("critical_failures", "safety_failures", "restricted_retrievals"):
+            if case["outcome"] == "ERROR" and case["severity"] != "critical":
+                items.append(f"{run['run_id']}: case {case['id']} ERROR (incomplete measurement)")
+        for name in ("critical_failures", "safety_failures", "restricted_retrievals",
+                     "error_count"):
             m = run["metrics"].get(name)
             if m and m["value"]:
                 items.append(f"{run['run_id']}: {name} = {m['value']}")
@@ -293,6 +301,15 @@ def analyze_runs(runs: Sequence[Mapping[str, Any]], purpose: str,
     ]
     if n < MIN_RUNS_FOR_TOLERANCE:
         limitations.append(f"Fewer than {MIN_RUNS_FOR_TOLERANCE} runs: no tolerance is proposed.")
+    limitations.append(
+        "Intervals assume runs are exchangeable. Run order can break that (for example a first run "
+        "after the model loads behaving differently); compare early and late runs before "
+        "trusting an interval.")
+    temperatures = {(r["identity"].get("generation") or {}).get("temperature") for r in runs}
+    if purpose == "exploratory" and temperatures == {0}:
+        limitations.append(
+            "Temperature is 0, so decoding is greedy and the seed is not expected to change the "
+            "output: a seed-varied batch at temperature 0 does not measure sampling variation.")
     if not any(c["outcome_pattern"] == "intermittent" for c in cases):
         upper = round(wilson_interval(0, n)[1], 4)
         limitations.append(
