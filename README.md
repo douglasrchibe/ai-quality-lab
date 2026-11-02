@@ -22,18 +22,20 @@ real-model parts are run and documented locally.
 | Regression detection | Every run compared with **owner-approved baselines**; findings name the metric, values, denominators and tolerance |
 | Honest reporting | Open known defects (D-6.1 to D-6.4) are listed in every CI summary and report |
 
-**Phase 9 (live calibration; in review, not merged):** repeated live RAG runs with
-traceable provenance, run-level and per-case statistics, evidence-based tolerance proposals, and
-owner-only live baselines. [docs/live-calibration.md](docs/live-calibration.md).
+**Phase 9 (live calibration):** repeated live RAG runs with traceable provenance (exact model
+build, Ollama version, sampling settings), run-level and per-case statistics, evidence-based
+tolerance proposals, and an owner-approved live RAG baseline.
+[docs/live-calibration.md](docs/live-calibration.md).
 
 **Try it in 10 minutes:** [docs/demo-guide.md](docs/demo-guide.md). Copyable commands, what you'll
 see, and what each step proves.
 
 ## Current status
 
-**Phases 1–8 are complete** (Phase 8 merged and validated on GitHub Actions/Ubuntu on
-2026-11-01; baselines approved by the project owner). Offline suite: **756 passed, 12 skipped**
-(the 12 are opt-in live-model tests). So far:
+**Phases 1–9 are complete.** Every phase was validated on GitHub Actions/Ubuntu; Phase 9 was
+merged on 2026-11-02. All six baselines (five deterministic, one live RAG) were approved by the
+project owner. Offline suite: **822 passed, 12 skipped** (the 12 are opt-in live-model tests).
+So far:
 - the project foundation
 - a deterministic mock chatbot
 - a custom evaluation engine that runs a JSON dataset of scenarios against the chatbot and prints
@@ -99,7 +101,7 @@ CurrentUser is sufficient. Alternatively, call the venv's Python directly withou
 python -m pytest
 ```
 
-Expected: **756 passed, 12 skipped**. The skips are the opt-in live-model tests
+Expected: **822 passed, 12 skipped**. The skips are the opt-in live-model tests
 (`test_llm_live.py`, `test_rag_live.py`); the CI skip audit fails on any other skip.
 
 Run a single module's tests by naming the file, e.g. `python -m pytest tests/test_mock_agent.py`.
@@ -116,7 +118,7 @@ There is one test file per module, grouped by area:
   workflow file)
 - **Observability (Phase 8):** `test_observability_records.py`, `test_observability_history.py`,
   `test_observability_regression.py`, `test_observability_baselines.py`,
-  `test_observability_cli.py`
+  `test_observability_cli.py`, `test_observability_calibration.py` (Phase 9)
 
 A few tests in
 `test_promptfoo_adapter.py` run the JavaScript assertion helpers with Node.js. If Node.js is
@@ -935,7 +937,8 @@ Data model, metric definitions, rules, baseline approval, investigation guide an
 src/ai_quality_lab/   package: mock_agent, guardrails, dataset, evaluator, runner,
                       promptfoo_adapter, engine_comparison, llm_client, llm_agent,
                       llm_dataset, llm_eval, reporting (Markdown quality reports)
-src/ai_quality_lab/observability/  Phase 8: records, history, regression, baselines, cli
+src/ai_quality_lab/observability/  Phase 8: records, history, regression, baselines, cli;
+                      Phase 9: calibration, live_batch, synthetic
 src/ai_quality_lab/rag/  Phase 6: documents, chunking, embeddings, vector_store, index,
                       retrieval, security, prompting, chatbot, mock_llm, dataset,
                       retrieval_metrics, failures, evaluate, ragas_eval
@@ -946,7 +949,8 @@ evals/                guardrail_cases.json (mock, shared by custom engine + Prom
 promptfoo/            Promptfoo configs, provider/test-generator shims, JS assertions, launcher
 docs/                 promptfoo-comparison.md, llm-evaluation.md, evaluation-approaches.md,
                       rag-architecture.md, rag-evaluation-methodology.md, ci-pipeline.md,
-                      quality-observability.md, demo-guide.md (10-minute walkthrough)
+                      quality-observability.md, demo-guide.md (10-minute walkthrough),
+                      live-calibration.md (+ a synthetic example report)
 .github/workflows/    ci.yml (quality gates), ragas-environment.yml (Ragas env validation)
 ci/known_defects.json open defects listed in every CI run summary
 ci/regression_rules.json  regression directions, tolerances and actions (Phase 8)
@@ -968,5 +972,6 @@ package.json          Node.js tooling: pinned Promptfoo + npm scripts (lockfile 
 | 6 | RAG + deterministic retrieval evaluation + advisory Ragas | Done (see Phase 6 report) |
 | 7 | GitHub Actions CI with deterministic quality gates | Done (see Phase 7 report) |
 | 8 | Quality observability: history, trends, regression detection, approved baselines | Done: validated on GitHub Actions; baselines owner-approved (see Phase 8 reports) |
+| 9 | Live RAG calibration: repeated runs, statistics, tolerance proposals, live baseline governance | Done: 16 real live runs; live baseline owner-approved (see Phase 9 and 9.1 reports) |
 
 Milestone acceptance criteria are documented in [CLAUDE.md](CLAUDE.md).

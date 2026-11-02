@@ -87,6 +87,12 @@ def cmd_record(args: argparse.Namespace) -> int:
         # The report came from that commit, not from this working tree: its state is unknown.
         source["uncommitted_changes"] = None
     if args.batch:
+        if args.history.exists() and any(r["source"].get("batch") == args.batch
+                                         for r in read_history(args.history)):
+            # A batch is closed once it has runs: adding one later would silently change any
+            # calibration (and a live baseline approval) recomputed from that batch.
+            raise RecordError(f"batch {args.batch!r} already has runs in {args.history}; a batch "
+                              "is never extended after the fact. Use a new batch label")
         source["batch"] = args.batch
     if args.purpose:
         source["purpose"] = args.purpose

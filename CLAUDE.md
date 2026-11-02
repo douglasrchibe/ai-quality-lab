@@ -56,7 +56,8 @@ quality gates. This is a learning/portfolio project for AI-evaluation QA automat
 | `constraints/` | CI lock files (primary and Ragas environments), generated from CI `pip freeze` |
 | `ci/known_defects.json` | Open defects that only live runs can detect; listed in every CI summary |
 | `src/ai_quality_lab/reporting.py` | Markdown quality reports (CI job summary, artifacts, local report) |
-| `src/ai_quality_lab/observability/` | Phase 8: records, history (JSONL), regression rules/detection, baselines, CLI |
+| `src/ai_quality_lab/observability/` | Phase 8: records, history (JSONL), regression rules/detection, baselines, CLI. Phase 9: `calibration`, `live_batch`, `synthetic` |
+| `docs/live-calibration.md` | Phase 9 live calibration method, operation, owner approval of live baselines |
 | `ci/regression_rules.json` | Regression directions, tolerances, actions |
 | `reports/baselines/` | Approved baselines (committed): manifest, audit log, immutable records |
 | `docs/quality-observability.md` | Phase 8 data model, metrics, rules, baseline approval, limitations |
@@ -129,6 +130,7 @@ A milestone is done only when **all** of the following are true:
 | 6 | RAG + deterministic retrieval evaluation + advisory Ragas | Done (see reports/phase_6_completion_report.md) |
 | 7 | GitHub Actions CI with deterministic quality gates | Done (see reports/phase_7_completion_report.md) |
 | 8 | Quality observability: history, trends, regression detection, approved baselines | Done (validated on GitHub Actions; owner-approved baselines; see reports/phase_8_2_finalization_report.md) |
+| 9 | Live RAG calibration and live baseline governance | Done (see reports/phase_9_completion_report.md and phase_9_1_calibration_report.md) |
 
 ## Evaluation engine rules (Phase 3)
 
@@ -276,4 +278,19 @@ A milestone is done only when **all** of the following are true:
 - Metric names, units (count | rate | score) and kinds are defined once in the metric catalog
   (`records.py`); add new metrics there. A report whose claimed status disagrees with its own
   results is refused, and approval re-checks content independently of `status`.
+
+## Live calibration rules (Phase 9)
+
+- Live runs only through `observability live-batch` (local Ollama; never paid APIs, never in CI).
+  Official batches need a clean commit; show the verified configuration and command to the owner
+  before running.
+- Never discard runs: BLOCKED runs are recorded, crashed runs are reported. Warm-up runs are a
+  separate exploratory batch declared before the run. Batches are never extended afterwards.
+- Statistics: n = runs for run-level values, n = runs per case for case-level; never pool repeated
+  cases into one binomial sample; never average across different denominators. Critical, safety,
+  error, and restricted failures block in any run and are never given a tolerance.
+- Tolerance proposals are evidence only; `ci/regression_rules.json` changes only by an owner PR.
+- Live baselines: `baseline review` first; only the owner runs `baseline approve`. Claude never
+  approves, and never uses `--allow-uncommitted` or `--accept-*`.
+- Synthetic data is always labelled SYNTHETIC and never presented as live evidence.
 
