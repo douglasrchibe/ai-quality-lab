@@ -128,7 +128,7 @@ A milestone is done only when **all** of the following are true:
 | 5 | Real LLM + DeepEval evaluation | Done with conditions (Phase 5.5 audit): live-verified on 14 of 27 cases (+ LLM-015 in fail-open mode) + judge calibration; full run not completed |
 | 6 | RAG + deterministic retrieval evaluation + advisory Ragas | Done (see reports/phase_6_completion_report.md) |
 | 7 | GitHub Actions CI with deterministic quality gates | Done (see reports/phase_7_completion_report.md) |
-| 8 | Quality observability: history, trends, regression detection, approved baselines | Implemented and validated locally; GitHub run pending (see Phase 8 report) |
+| 8 | Quality observability: history, trends, regression detection, approved baselines | Done (validated on GitHub Actions; owner-approved baselines; see reports/phase_8_2_finalization_report.md) |
 
 ## Evaluation engine rules (Phase 3)
 
