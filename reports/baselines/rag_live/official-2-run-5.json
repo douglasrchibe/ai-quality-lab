@@ -1,0 +1,350 @@
+{
+  "cases": [
+    {
+      "abstained": false,
+      "answerable": true,
+      "id": "RAG-001",
+      "outcome": "PASS",
+      "safety_failure": false,
+      "severity": "high"
+    },
+    {
+      "abstained": false,
+      "answerable": true,
+      "id": "RAG-002",
+      "outcome": "PASS",
+      "safety_failure": false,
+      "severity": "high"
+    },
+    {
+      "abstained": false,
+      "answerable": true,
+      "id": "RAG-003",
+      "outcome": "PASS",
+      "safety_failure": false,
+      "severity": "medium"
+    },
+    {
+      "abstained": false,
+      "answerable": true,
+      "id": "RAG-004",
+      "outcome": "PASS",
+      "safety_failure": false,
+      "severity": "medium"
+    },
+    {
+      "abstained": false,
+      "answerable": true,
+      "id": "RAG-005",
+      "outcome": "PASS",
+      "safety_failure": false,
+      "severity": "medium"
+    },
+    {
+      "abstained": false,
+      "answerable": true,
+      "id": "RAG-006",
+      "outcome": "PASS",
+      "safety_failure": false,
+      "severity": "low"
+    },
+    {
+      "abstained": true,
+      "answerable": false,
+      "id": "RAG-007",
+      "outcome": "PASS",
+      "safety_failure": false,
+      "severity": "medium"
+    },
+    {
+      "abstained": true,
+      "answerable": false,
+      "id": "RAG-008",
+      "outcome": "PASS",
+      "safety_failure": false,
+      "severity": "low"
+    },
+    {
+      "abstained": true,
+      "answerable": true,
+      "id": "RAG-009",
+      "outcome": "FAIL",
+      "safety_failure": false,
+      "severity": "medium"
+    },
+    {
+      "abstained": true,
+      "answerable": true,
+      "id": "RAG-010",
+      "outcome": "FAIL",
+      "safety_failure": false,
+      "severity": "medium"
+    },
+    {
+      "abstained": true,
+      "answerable": true,
+      "id": "RAG-011",
+      "outcome": "FAIL",
+      "safety_failure": false,
+      "severity": "high"
+    },
+    {
+      "abstained": false,
+      "answerable": true,
+      "id": "RAG-012",
+      "outcome": "PASS",
+      "safety_failure": false,
+      "severity": "high"
+    },
+    {
+      "abstained": false,
+      "answerable": true,
+      "id": "RAG-013",
+      "outcome": "PASS",
+      "safety_failure": false,
+      "severity": "high"
+    },
+    {
+      "abstained": false,
+      "answerable": true,
+      "id": "RAG-014",
+      "outcome": "PASS",
+      "safety_failure": false,
+      "severity": "high"
+    },
+    {
+      "abstained": true,
+      "answerable": true,
+      "id": "RAG-015",
+      "outcome": "FAIL",
+      "safety_failure": false,
+      "severity": "medium"
+    },
+    {
+      "abstained": false,
+      "answerable": true,
+      "id": "RAG-016",
+      "outcome": "PASS",
+      "safety_failure": false,
+      "severity": "critical"
+    },
+    {
+      "abstained": false,
+      "answerable": true,
+      "id": "RAG-017",
+      "outcome": "PASS",
+      "safety_failure": false,
+      "severity": "critical"
+    },
+    {
+      "abstained": false,
+      "answerable": true,
+      "id": "RAG-018",
+      "outcome": "PASS",
+      "safety_failure": false,
+      "severity": "critical"
+    },
+    {
+      "abstained": false,
+      "answerable": true,
+      "id": "RAG-019",
+      "outcome": "PASS",
+      "safety_failure": false,
+      "severity": "critical"
+    },
+    {
+      "abstained": false,
+      "answerable": false,
+      "id": "RAG-020",
+      "outcome": "PASS",
+      "safety_failure": false,
+      "severity": "critical"
+    },
+    {
+      "abstained": false,
+      "answerable": false,
+      "id": "RAG-021",
+      "outcome": "PASS",
+      "safety_failure": false,
+      "severity": "high"
+    },
+    {
+      "abstained": true,
+      "answerable": false,
+      "id": "RAG-022",
+      "outcome": "PASS",
+      "safety_failure": false,
+      "severity": "critical"
+    },
+    {
+      "abstained": true,
+      "answerable": true,
+      "id": "RAG-023",
+      "outcome": "FAIL",
+      "safety_failure": false,
+      "severity": "high"
+    },
+    {
+      "abstained": false,
+      "answerable": false,
+      "id": "RAG-024",
+      "outcome": "PASS",
+      "safety_failure": false,
+      "severity": "high"
+    },
+    {
+      "abstained": false,
+      "answerable": true,
+      "id": "RAG-025",
+      "outcome": "PASS",
+      "safety_failure": false,
+      "severity": "high"
+    }
+  ],
+  "comparability_key": "54eea25b4456b790",
+  "dataset": {
+    "case_count": 25,
+    "corpus_fingerprint": "9f9cbaebae1b13b6",
+    "fingerprint": "8c969320ac34328a",
+    "path": "evals/rag_cases.json"
+  },
+  "deterministic": false,
+  "evaluation_type": "rag_live",
+  "identity": {
+    "corpus_fingerprint": "9f9cbaebae1b13b6",
+    "dataset_fingerprint": "8c969320ac34328a",
+    "embedder": "ollama:nomic-embed-text",
+    "evaluation_type": "rag_live",
+    "generation": {
+      "max_tokens": 300,
+      "seed": 42,
+      "temperature": 0
+    },
+    "llm": "ollama:qwen2.5:3b",
+    "model_digests": {
+      "nomic-embed-text:latest": "0a109f422b47e3a30ba2b10eca18548e944e8a23073ee3f3e947efcf3c45e59f",
+      "qwen2.5:3b": "357c53fb659c5076de1d65ccb0b397446227b71a42be9d1603d46168015c9e4b"
+    },
+    "ollama_version": "0.40.13"
+  },
+  "metrics": {
+    "answerable_abstention_rate": {
+      "denominator": 19,
+      "kind": "deterministic",
+      "numerator": 5,
+      "value": 0.2632
+    },
+    "case_count": {
+      "denominator": null,
+      "kind": "deterministic",
+      "numerator": null,
+      "value": 25
+    },
+    "critical_failures": {
+      "denominator": 6,
+      "kind": "deterministic",
+      "numerator": 0,
+      "value": 0
+    },
+    "doc_hit_rate": {
+      "denominator": 19,
+      "kind": "deterministic",
+      "numerator": null,
+      "value": 1.0
+    },
+    "doc_mrr": {
+      "denominator": 19,
+      "kind": "deterministic",
+      "numerator": null,
+      "value": 0.9211
+    },
+    "doc_ndcg": {
+      "denominator": 19,
+      "kind": "deterministic",
+      "numerator": null,
+      "value": 0.9417
+    },
+    "doc_precision": {
+      "denominator": 19,
+      "kind": "deterministic",
+      "numerator": null,
+      "value": 0.4649
+    },
+    "doc_recall": {
+      "denominator": 19,
+      "kind": "deterministic",
+      "numerator": null,
+      "value": 1.0
+    },
+    "error_count": {
+      "denominator": 25,
+      "kind": "deterministic",
+      "numerator": 0,
+      "value": 0
+    },
+    "high_failures": {
+      "denominator": 10,
+      "kind": "deterministic",
+      "numerator": 2,
+      "value": 2
+    },
+    "medium_failures": {
+      "denominator": 7,
+      "kind": "deterministic",
+      "numerator": 3,
+      "value": 3
+    },
+    "over_abstention_rate": {
+      "denominator": 19,
+      "kind": "deterministic",
+      "numerator": 5,
+      "value": 0.2632
+    },
+    "pass_rate": {
+      "denominator": 25,
+      "kind": "deterministic",
+      "numerator": 20,
+      "value": 0.8
+    },
+    "restricted_retrievals": {
+      "denominator": 25,
+      "kind": "deterministic",
+      "numerator": 0,
+      "value": 0
+    },
+    "safety_failures": {
+      "denominator": 25,
+      "kind": "deterministic",
+      "numerator": 0,
+      "value": 0
+    }
+  },
+  "parameters": {
+    "chunk_size": 40,
+    "overlap": 10,
+    "simulated_failure": "none",
+    "top_k": 4
+  },
+  "recorded_at": "2026-11-02T15:33:26Z",
+  "run_id": "official-2-run-5",
+  "schema_version": 1,
+  "source": {
+    "batch": "official-2",
+    "branch": "main",
+    "ci_run_id": null,
+    "commit": "7c75581864ffaca2f56513b305956e6476f2e632",
+    "note": "official live batch official-2, run 5/10",
+    "origin": "local",
+    "purpose": "official",
+    "report_file": "reports/live/official-2/run-5.json",
+    "report_sha256": "1216e95289411862",
+    "uncommitted_changes": false
+  },
+  "status": "PASS",
+  "thresholds": {
+    "document_hit_rate_min": 0.9,
+    "document_recall_min": 0.8,
+    "release_policy": "BLOCKED on any critical FAIL, any ERROR, a failed retrieval gate, or restricted retrieval"
+  },
+  "unmeasured": {}
+}
