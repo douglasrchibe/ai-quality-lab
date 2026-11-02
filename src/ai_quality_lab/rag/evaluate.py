@@ -40,6 +40,7 @@ from ai_quality_lab.llm_client import (
     OpenAICompatibleClient,
     check_model_available,
     load_env_file,
+    ollama_provenance,
 )
 from ai_quality_lab.rag.chatbot import RAGChatbot, RAGResponse, RAGSimulatedFailure
 from ai_quality_lab.rag.chunking import Chunk, ChunkingConfig
@@ -50,7 +51,7 @@ from ai_quality_lab.rag.dataset import (
     relevant_chunk_ids,
 )
 from ai_quality_lab.rag.documents import DEFAULT_KNOWLEDGE_BASE, DocumentError, load_documents
-from ai_quality_lab.rag.embeddings import HashingEmbedder, embedder_from_env
+from ai_quality_lab.rag.embeddings import HashingEmbedder, OllamaEmbedder, embedder_from_env
 from ai_quality_lab.rag.failures import (
     FailureClassification,
     FailureType,
@@ -311,6 +312,17 @@ def _make_client(name: str):
     return OpenAICompatibleClient(settings)
 
 
+def _live_provenance(settings: LLMSettings, embedder: object) -> dict:
+    """Generation settings, Ollama version and model digests of a live run (identity inputs)."""
+    provenance: dict = {"generation": settings.generation_settings()}
+    if settings.provider == "ollama":
+        models = [settings.model]
+        if isinstance(embedder, OllamaEmbedder):
+            models.append(embedder.model)
+        provenance["provenance"] = ollama_provenance(settings.base_url, models)
+    return provenance
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m ai_quality_lab.rag.evaluate",
                                      description="Evaluate retrieval and the RAG chatbot.")
@@ -357,6 +369,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                      "chunk_size": chunking.chunk_size, "overlap": chunking.overlap,
                      "llm": client.label if client else "none",
                      "simulated_failure": failure.value}
+    if isinstance(client, OpenAICompatibleClient):
+        try:
+            configuration.update(_live_provenance(client.settings, embedder))
+        except LLMError as exc:
+            print(f"Setup error: {exc}", file=sys.stderr)
+            return 2
     print(f"Evaluating {len(cases)} case(s): {configuration}", flush=True)
     if failure is not RAGSimulatedFailure.NONE:
         print(f"WARNING: simulated failure '{failure.value}' is ENABLED (test-only).", flush=True)

@@ -234,3 +234,52 @@ def test_model_availability_check():
 
 def test_model_availability_check_makes_no_request_for_openai():
     check_model_available(LLMSettings("openai", "m", "http://127.0.0.1:9", api_key="k"))
+
+
+# --- Phase 9: seed setting and Ollama provenance ------------------------------------------------
+
+from ai_quality_lab.llm_client import GENERATION_SEED, ollama_provenance  # noqa: E402
+
+
+def test_seed_defaults_to_the_shipped_value_and_can_be_overridden():
+    assert LLMSettings.from_env({}).generation_settings() == {
+        "temperature": 0, "seed": GENERATION_SEED, "max_tokens": 300}
+    assert LLMSettings.from_env({"AIQL_LLM_SEED": "7"}).seed == 7
+    for bad in ("-1", "1.5", "seven"):
+        with pytest.raises(LLMConfigurationError, match="AIQL_LLM_SEED"):
+            LLMSettings.from_env({"AIQL_LLM_SEED": bad})
+
+
+def test_overridden_seed_is_sent_with_the_request():
+    with fake_server(body=CHAT_OK) as (url, requests):
+        settings = LLMSettings("ollama", "qwen2.5:3b", url, timeout_seconds=5, seed=7)
+        OpenAICompatibleClient(settings).complete(MESSAGES)
+    assert requests[0][2]["seed"] == 7 and requests[0][2]["temperature"] == 0
+
+
+TAGS = {"models": [{"name": "qwen2.5:3b", "digest": "a" * 64},
+                   {"name": "nomic-embed-text:latest", "digest": "b" * 64}]}
+
+
+def test_ollama_provenance_reports_version_and_exact_digests():
+    routes = {"/api/version": {"version": "0.40.13"}, "/api/tags": TAGS}
+    with fake_server(routes=routes) as (url, _):
+        provenance = ollama_provenance(url, ["qwen2.5:3b", "nomic-embed-text"])
+    assert provenance == {"ollama_version": "0.40.13",
+                          "model_digests": {"qwen2.5:3b": "a" * 64,
+                                            "nomic-embed-text:latest": "b" * 64}}
+
+
+@pytest.mark.parametrize("routes, message", [
+    ({"/api/version": {"version": "0.40.13"}, "/api/tags": {"models": []}}, "no digest"),
+    ({"/api/version": {}, "/api/tags": TAGS}, "did not report its version"),
+])
+def test_ollama_provenance_refuses_unattributable_runs(routes, message):
+    with fake_server(routes=routes) as (url, _):
+        with pytest.raises(LLMUnavailableError, match=message):
+            ollama_provenance(url, ["qwen2.5:3b"])
+
+
+def test_ollama_provenance_when_unreachable():
+    with pytest.raises(LLMUnavailableError, match="Cannot read Ollama"):
+        ollama_provenance("http://127.0.0.1:1", ["qwen2.5:3b"])

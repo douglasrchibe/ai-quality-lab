@@ -239,3 +239,79 @@ def test_committed_baselines_match_their_audit_log():
     from pathlib import Path
 
     assert audit_problems(Path(__file__).resolve().parents[1] / "reports" / "baselines") == []
+
+
+# --- Phase 9: live baselines need an official calibration ---------------------------------------
+
+from ai_quality_lab.observability.calibration import analyze_runs  # noqa: E402
+from ai_quality_lab.observability.synthetic import synthetic_run  # noqa: E402
+
+
+def real_live_runs(n=5, **kwargs):
+    """Synthetic shapes relabelled as clean local runs, ONLY to exercise approval rules."""
+    runs = [synthetic_run(f"live-{i}", **kwargs) for i in range(1, n + 1)]
+    for run in runs:
+        run["source"].update(origin="local", commit="abc1234", uncommitted_changes=False)
+    return runs
+
+
+def calibration_of(runs):
+    return analyze_runs(runs, "official", RULES)
+
+
+def test_live_baseline_without_calibration_is_refused(tmp_path):
+    with pytest.raises(BaselineError, match="needs an official calibration"):
+        approve(tmp_path, real_live_runs()[0])
+
+
+def test_live_baseline_with_official_calibration_is_stored_and_audited(tmp_path):
+    runs = real_live_runs()
+    calibration = calibration_of(runs)
+    entry = approve(tmp_path, runs[2], calibration=calibration)
+    stored = tmp_path / "rag_live" / "live-3.calibration.json"
+    assert stored.exists() and entry["calibration"]["n_runs"] == 5
+    assert entry["calibration"]["run_ids"] == [r["run_id"] for r in runs]
+    assert audit_problems(tmp_path) == []
+    stored.write_text(stored.read_text(encoding="utf-8").replace('"n_runs": 5', '"n_runs": 9'),
+                      encoding="utf-8")
+    assert audit_problems(tmp_path) == ["rag_live: calibration file does not match its "
+                                        "audited hash"]
+
+
+@pytest.mark.parametrize("problem, message", [
+    ("too few runs", "at least 5 are required"),
+    ("run not in calibration", "not part of the calibration"),
+    ("critical failure in another run", "critical or safety failures"),
+    ("dirty provenance", "not recorded on a clean, committed state"),
+])
+def test_unsupported_live_baselines_are_refused(tmp_path, problem, message):
+    runs = real_live_runs()
+    record = runs[0]
+    if problem == "too few runs":
+        calibration = calibration_of(runs[:4])
+    elif problem == "run not in calibration":
+        calibration = calibration_of(runs[1:] + real_live_runs(6)[5:])
+    elif problem == "critical failure in another run":
+        runs[4] = synthetic_run("live-5", safety=["RAG-002"])
+        runs[4]["source"].update(origin="local", commit="abc1234", uncommitted_changes=False)
+        calibration = calibration_of(runs)
+    else:
+        runs[3]["source"]["uncommitted_changes"] = True
+        calibration = calibration_of(runs)
+    with pytest.raises(BaselineError, match=message):
+        approve(tmp_path, record, calibration=calibration)
+    assert not (tmp_path / "manifest.json").exists()
+
+
+def test_synthetic_and_exploratory_runs_are_never_baselines(tmp_path, make_record):
+    with pytest.raises(BaselineError, match="SYNTHETIC"):
+        approve(tmp_path, synthetic_run("s"))
+    exploratory = make_record(run_id="e")
+    exploratory["source"]["purpose"] = "exploratory"
+    with pytest.raises(BaselineError, match="exploratory"):
+        approve(tmp_path, exploratory)
+
+
+def test_calibration_is_not_accepted_for_deterministic_types(tmp_path, make_record):
+    with pytest.raises(BaselineError, match="only used for rag_live"):
+        approve(tmp_path, make_record(), calibration=calibration_of(real_live_runs()))

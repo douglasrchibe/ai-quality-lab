@@ -148,6 +148,34 @@ def describe_identity_change(change: Mapping[str, Any]) -> str:
     return f"identity [{identity}]; metric differences [{metrics or 'none'}]"
 
 
+def _calibration_problems(record: Mapping[str, Any],
+                          calibration: Mapping[str, Any] | None) -> list[str]:
+    """Why ``calibration`` does not support approving this record (rag_live only)."""
+    from ai_quality_lab.observability.calibration import MIN_RUNS_FOR_TOLERANCE
+
+    if record["evaluation_type"] != "rag_live":
+        return ["a calibration is only used for rag_live baselines"] if calibration else []
+    if calibration is None:
+        return ["a rag_live baseline needs an official calibration of repeated runs "
+                "(--calibration-batch)"]
+    problems = []
+    if calibration.get("purpose") != "official" or calibration.get("synthetic"):
+        problems.append("the calibration is not an official, non-synthetic analysis")
+    if calibration.get("n_runs", 0) < MIN_RUNS_FOR_TOLERANCE:
+        problems.append(f"the calibration covers {calibration.get('n_runs')} run(s); at least "
+                        f"{MIN_RUNS_FOR_TOLERANCE} are required")
+    if record["run_id"] not in calibration.get("run_ids", []):
+        problems.append("the run being approved is not part of the calibration")
+    if calibration.get("identity") != record["identity"]:
+        problems.append("the calibration's configuration differs from this run's identity")
+    if calibration.get("blocking"):
+        problems.append(f"the calibration has critical or safety failures: "
+                        f"{calibration['blocking'][:3]}")
+    if not calibration.get("clean_provenance"):
+        problems.append("some calibration runs were not recorded on a clean, committed state")
+    return problems
+
+
 def audit_problems(directory: str | Path) -> list[str]:
     """Every manifest entry must match an audit-log approval (same run, file, and hash), and the
     latest approval logged for each type must be the manifest's current baseline."""
@@ -169,14 +197,29 @@ def audit_problems(directory: str | Path) -> list[str]:
                 entry.get("run_id"), entry.get("file"), entry.get("sha256")):
             problems.append(f"{etype}: manifest entry {entry.get('run_id')} does not match the "
                             f"latest audit-log approval {last.get('run_id')}")
+        calibration = last.get("calibration")
+        if calibration:
+            try:
+                stored = json.loads((directory / calibration["file"]).read_text(encoding="utf-8"))
+            except (OSError, ValueError, KeyError) as exc:
+                problems.append(f"{etype}: calibration file unreadable: {exc}")
+                continue
+            if record_hash(stored) != calibration.get("sha256"):
+                problems.append(f"{etype}: calibration file does not match its audited hash")
     return problems
 
 
 def approve_baseline(directory: str | Path, record: Mapping[str, Any], *, approved_by: str,
                      reason: str, rules: Mapping[str, Rule], accept_identity_change: bool = False,
                      accept_regression: bool = False, allow_uncommitted: bool = False,
+                     calibration: Mapping[str, Any] | None = None,
                      now: str | None = None) -> dict[str, Any]:
-    """Approve ``record`` as the new baseline for its type. Returns the audit entry."""
+    """Approve ``record`` as the new baseline for its type. Returns the audit entry.
+
+    A ``rag_live`` (nondeterministic) baseline also needs ``calibration``: an official analysis of
+    at least ``MIN_RUNS_FOR_TOLERANCE`` comparable runs, recomputed from the history by the caller,
+    that includes this run. It is stored next to the baseline and its hash is audited.
+    """
     directory = Path(directory)
     errors = validate_record(record)
     if errors:
@@ -195,6 +238,14 @@ def approve_baseline(directory: str | Path, record: Mapping[str, Any], *, approv
     unexpected = record["metrics"].get("unexpected_skips", {}).get("value", 0)
     if unexpected:
         raise BaselineError(f"{run_id} has {unexpected} unexpected skipped test(s)")
+    if record["source"].get("origin") == "synthetic":
+        raise BaselineError(f"{run_id} is SYNTHETIC data; it can never be a baseline")
+    if record["source"].get("purpose") == "exploratory":
+        raise BaselineError(f"{run_id} belongs to an exploratory batch; exploratory runs are "
+                            "excluded from baselines")
+    calibration_problems = _calibration_problems(record, calibration)
+    if calibration_problems:
+        raise BaselineError(f"{run_id}: " + "; ".join(calibration_problems))
     blockers = quality_blockers(record)
     if blockers:
         raise BaselineError(f"{run_id} cannot be a baseline whatever its status says: "
@@ -248,13 +299,25 @@ def approve_baseline(directory: str | Path, record: Mapping[str, Any], *, approv
     if target.exists():
         raise BaselineError(f"{target} already exists; baseline files are never overwritten")
     target.parent.mkdir(parents=True, exist_ok=True)
+    calibration_entry = None
+    if calibration is not None:
+        calibration_file = directory / f"{etype}/{run_id}.calibration.json"
+        if calibration_file.exists():
+            raise BaselineError(f"{calibration_file} already exists; never overwritten")
+        calibration_file.write_text(json.dumps(calibration, indent=2, sort_keys=True,
+                                               ensure_ascii=False) + "\n",
+                                    encoding="utf-8", newline="\n")
+        calibration_entry = {"file": f"{etype}/{run_id}.calibration.json",
+                             "sha256": record_hash(calibration),
+                             "n_runs": calibration["n_runs"], "run_ids": calibration["run_ids"]}
     target.write_text(json.dumps(record, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
                       encoding="utf-8", newline="\n")
     entry = {"action": "approve", "evaluation_type": etype, "run_id": run_id, "file": relative,
              "sha256": record_hash(record), "commit": record["source"].get("commit"),
              "previous_run_id": previous["run_id"] if previous else None,
              "approved_at": now or utc_now(), "approved_by": approved_by.strip(),
-             "reason": reason.strip(), "flags": flags, "identity_change": identity_change}
+             "reason": reason.strip(), "flags": flags, "identity_change": identity_change,
+             "calibration": calibration_entry}
     manifest["current"][etype] = {k: entry[k] for k in ("run_id", "file", "sha256", "commit",
                                                         "approved_at", "approved_by", "reason")}
     temporary = manifest_path.with_suffix(".tmp")

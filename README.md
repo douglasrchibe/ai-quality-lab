@@ -22,6 +22,10 @@ real-model parts are run and documented locally.
 | Regression detection | Every run compared with **owner-approved baselines**; findings name the metric, values, denominators and tolerance |
 | Honest reporting | Open known defects (D-6.1 to D-6.4) are listed in every CI summary and report |
 
+**Phase 9 (live calibration; in review, not merged):** repeated live RAG runs with
+traceable provenance, run-level and per-case statistics, evidence-based tolerance proposals, and
+owner-only live baselines. [docs/live-calibration.md](docs/live-calibration.md).
+
 **Try it in 10 minutes:** [docs/demo-guide.md](docs/demo-guide.md). Copyable commands, what you'll
 see, and what each step proves.
 
