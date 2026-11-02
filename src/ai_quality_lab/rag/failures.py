@@ -214,6 +214,12 @@ def _classify_missing_fact(case, response, chunk_metrics, context_text, add) -> 
         add(FailureType.CONTEXT,
             "Relevant chunks were retrieved, but the reference passage did not reach the model "
             "(removed or truncated during context assembly).")
+    elif is_abstention(response.response):
+        # Named separately so an over-abstention (D-6.1) is visible in the evidence without
+        # reading the answer; the failure type is unchanged.
+        add(FailureType.GENERATION,
+            "All reference passages were in the context sent to the model, but the answer says "
+            "the information is unavailable (abstention).")
     else:
         add(FailureType.GENERATION,
             "All reference passages were in the context sent to the model, but the answer omits "

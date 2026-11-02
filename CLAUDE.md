@@ -58,6 +58,7 @@ quality gates. This is a learning/portfolio project for AI-evaluation QA automat
 | `src/ai_quality_lab/reporting.py` | Markdown quality reports (CI job summary, artifacts, local report) |
 | `src/ai_quality_lab/observability/` | Phase 8: records, history (JSONL), regression rules/detection, baselines, CLI. Phase 9: `calibration`, `live_batch`, `synthetic` |
 | `docs/live-calibration.md` | Phase 9 live calibration method, operation, owner approval of live baselines |
+| `docs/experiments/` | Pre-registered live experiments (protocol, decision rules, results), rubric change records |
 | `ci/regression_rules.json` | Regression directions, tolerances, actions |
 | `reports/baselines/` | Approved baselines (committed): manifest, audit log, immutable records |
 | `docs/quality-observability.md` | Phase 8 data model, metrics, rules, baseline approval, limitations |
