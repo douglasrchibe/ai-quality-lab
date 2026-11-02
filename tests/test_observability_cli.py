@@ -396,3 +396,15 @@ def test_live_batch_stops_if_the_model_build_changes(live_env, monkeypatch, caps
     monkeypatch.setattr(live_batch, "build_record", fake_build)
     assert main(batch_args()) == 2
     assert "model build or Ollama version changed" in capsys.readouterr().out
+
+
+def test_record_refuses_to_extend_an_existing_batch(tmp_path, capsys):
+    # A batch is closed once it has runs, so a calibration (and a live baseline approval) recomputed
+    # from it later cannot differ from the one that was reviewed.
+    history = tmp_path / "h.jsonl"
+    report = engine_report(tmp_path)
+    assert record(tmp_path, history, report, "a", "custom_engine", "--batch", "b1") == 0
+    assert record(tmp_path, history, report, "b", "custom_engine", "--batch", "b1") == 2
+    assert "batch 'b1' already has runs" in capsys.readouterr().err
+    assert [r["run_id"] for r in read_history(history)] == ["a"]
+    assert record(tmp_path, history, report, "c", "custom_engine", "--batch", "b2") == 0
