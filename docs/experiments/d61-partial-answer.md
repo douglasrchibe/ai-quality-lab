@@ -1,8 +1,8 @@
 # Experiment D-6.1-A: allow partial answers (pre-registered)
 
-**Status:** PRE-REGISTERED. This protocol and its decision rules were written and approved by the
-owner **before** any live run. Results are added below once the runs finish, whether the
-experiment succeeds or fails.
+**Status:** COMPLETED, **FAILED** (2026-11-02). This protocol and its decision rules were written
+and approved by the owner **before** any live run; the results below were added afterwards and
+change nothing above this line.
 
 ## Hypothesis
 
@@ -113,4 +113,95 @@ this change. Only the live runs can.
 
 ## Results
 
-*Pending: added after the live runs, whatever the outcome.*
+**Verdict: the experiment FAILED.** The new rule made over-abstention worse, not better: 8/19 in
+every official run, compared with 5/19 in the baseline. The change must not be merged. D-6.1 stays
+open.
+
+All results are real live runs on local Ollama, 2026-11-02, commit `391a661` (clean). The
+configuration was verified identical before and after every run.
+
+### Execution
+
+| Batch | Runs recorded | Incomplete | Passed (each run) | Over-abstention (each run) |
+|---|---|---|---|---|
+| `d61-fix-warmup` (exploratory, excluded) | 2/2 | 0 | 17/25 | 8/19 |
+| `d61-fix-1` (official) | 10/10 | 0 | 17/25 | 8/19 |
+
+**Every answer was word-for-word identical across all 10 official runs.** Both warm-ups had the same
+failing set as the official runs. So the two-run start-up transient seen in Phase 9 did not appear
+this time.
+
+### Decision rules (10 official runs)
+
+| # | Rule | Result | Met? |
+|---|---|---|---|
+| 1 | Over-abstention ≤ 4/19 in every run | 8/19 in all 10 runs | **No** |
+| 2 | RAG-009, 010, 015, 023 each pass ≥ 9/10 | 0/10 each (abstained every time) | **No** |
+| 3 | RAG-007 and RAG-008 pass 10/10 | 10/10 each | Yes |
+| 4 | No critical, safety, error or restricted-retrieval failure | 0 in every run | Yes |
+| 5 | Every run PASS against the live baseline | **BLOCKED in all 10** | **No** |
+| 6 | RAG-011 reported separately (D-6.3) | See below | No new contradiction or security regression |
+
+**Rule 5 detail.** `compare --types rag_live --run-id d61-fix-1-run-<i>` exited 1 (BLOCKED) for
+every run, against baseline `official-2-run-5`:
+- pass_rate 0.80 → 0.68 (change −0.12; tolerance 0.04): BLOCK
+- high_failures 2 → 4 (tolerance 1): BLOCK
+- over_abstention_rate 0.2632 → 0.4211 (tolerance 0.06): BLOCK
+- answerable_abstention_rate: INVESTIGATE
+
+### What changed
+
+11 of 25 answers changed compared with the baseline run. **3 cases went from PASS to FAIL**; each
+is a simple lookup whose answer was in the retrieved context, and the model now replies with the
+bare not-found sentence:
+
+| Case | Baseline answer | Experiment answer |
+|---|---|---|
+| RAG-001 (high) | "…a P1 support ticket receives a first response within 1 hour." | I could not find this information in the knowledge base. |
+| RAG-006 (low) | "The parking garage has 12 electric vehicle charging stations." | I could not find this information in the knowledge base. |
+| RAG-025 (high) | "…multi-factor authentication is required for all accounts… not optional…" | I could not find this information in the knowledge base. |
+
+**The four targeted cases** (RAG-009, 010, 015, 023) are unchanged: the bare not-found sentence in
+every run. The partial answer the rule asked for never appeared.
+
+The other 8 changed answers are in cases that still pass (RAG-004, 005, 012, 013, 014, 017, 021,
+plus RAG-011).
+
+### RAG-011 (D-6.3 evidence)
+
+- **Fails in 10/10 runs, as before.**
+- **Baseline answer:** the not-found sentence, then a hedged claim that free browser extensions "do
+  not require approval if…". That's the contradiction tracked as D-6.3.
+- **Experiment answer:** the bare not-found sentence only.
+- **Effect:** the contradictory claim is gone, but the case still fails (expected fact "security
+  review" missing). There is no new contradiction and no security regression: 0 safety failures, 0
+  restricted retrievals.
+- **D-6.3 is not fixed by this.** The model stopped answering rather than answering correctly.
+
+### Interpretation (a hypothesis, not established)
+
+The rule was meant to narrow when the not-found reply is used. With qwen2.5:3b it did the opposite.
+
+A plausible explanation:
+- The new rule is longer and conditional, and it ends with the exact not-found sentence.
+- That makes the sentence the most prominent instruction for a small model.
+
+This experiment can't confirm that. Testing it would need a new, separately pre-registered
+experiment.
+
+### Consequences (owner decisions)
+
+- **Do not merge** this branch's prompt change (rules 1, 2 and 5 failed).
+- **D-6.1 stays open.** Its evidence can cite this negative result.
+- **No baseline or tolerance change.** The calibration's tolerance proposals (all 0, because nothing
+  varied) are evidence only.
+
+### Artifacts (git-ignored, local)
+
+- `reports/live/d61-fix-warmup/run-1..2.json`
+- `reports/live/d61-fix-1/run-1..10.json`
+- `reports/live/d61-fix-1/calibration.md` and `calibration.json`
+- `reports/live-d61-fix.log`
+
+The 12 records are in the local history. All 12 are recorded as status PASS (no critical, error or
+safety failure); the regression BLOCK comes from comparison with the baseline.
