@@ -23,8 +23,12 @@ from ai_quality_lab.agent.tools import (
     CONSEQUENTIAL_TOOLS,
     REGISTRY,
     REQUEST_ID,
+    Stage,
     StageError,
-    validate_schema,
+    StageOutcome,
+    accept,
+    safe_repr,
+    schema_stage,
 )
 
 
@@ -118,33 +122,40 @@ class Sandbox:
 
     # --- Stage 4: argument validation against the current state --------------------------------
 
-    def validate_arguments(self, tool: str, arguments: Mapping[str, Any]) -> None:
-        """Referenced users and tickets must exist; idempotency keys must be well formed and not
-        reused for a different request."""
+    def arguments_stage(self, tool: str, arguments: Mapping[str, Any]) -> StageOutcome:
+        """Stage 4. Referenced users and tickets must exist; idempotency keys must be well formed
+        and not reused for a different request."""
+        try:
+            self._validate_arguments(tool, arguments)
+        except StageError as exc:
+            return exc.outcome(Stage.ARGUMENTS)
+        return accept(Stage.ARGUMENTS)
+
+    def _validate_arguments(self, tool: str, arguments: Mapping[str, Any]) -> None:
         if "user_id" in arguments and arguments["user_id"] not in self.users:
-            raise StageError("argument_error", f"unknown user {arguments['user_id']!r}")
+            raise StageError("argument_error", f"unknown user {safe_repr(arguments['user_id'])}")
         if "ticket_id" in arguments and arguments["ticket_id"] not in self.tickets:
-            raise StageError("argument_error", f"unknown ticket {arguments['ticket_id']!r}")
+            raise StageError("argument_error", f"unknown ticket {safe_repr(arguments['ticket_id'])}")
         if tool == "create_ticket":
             request_id = arguments["request_id"]
             if not REQUEST_ID.match(request_id):
-                raise StageError("argument_error", f"malformed request_id {request_id!r}")
+                raise StageError("argument_error", f"malformed request_id {safe_repr(request_id)}")
             seen = self._requests.get(request_id)
             if seen and seen[0] != dict(arguments):
                 raise StageError("argument_error",
-                                 f"request_id {request_id!r} was already used for a different request")
+                                 f"request_id {safe_repr(request_id)} was already used for a "
+                                 "different request")
         if tool == "request_approval":
             target, target_args = arguments["tool"], arguments["arguments"]
             if target not in CONSEQUENTIAL_TOOLS:
                 raise StageError("argument_error",
                                  f"approval can only be requested for {list(CONSEQUENTIAL_TOOLS)}")
             schema_args = {**target_args, "approval_id": "pending"}  # the id doesn't exist yet
-            try:
-                validate_schema(REGISTRY[target], schema_args)
-            except StageError as exc:
+            proposed = schema_stage(REGISTRY[target], schema_args)
+            if not proposed.ok:
                 raise StageError("argument_error",
-                                 f"proposed {target} arguments are invalid: {exc.detail}") from None
-            self.validate_arguments(target, target_args)
+                                 f"proposed {target} arguments are invalid: {proposed.detail}")
+            self._validate_arguments(target, target_args)
 
     # --- Stage 6: execution (fault injection is applied by the runtime around this) ------------
 

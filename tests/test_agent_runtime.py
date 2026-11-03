@@ -258,3 +258,166 @@ def test_the_agent_package_imports_nothing_that_can_reach_the_network_or_filesys
                                for p in ALLOWED_PROJECT_IMPORTS), f"{path.name}: imports {name}"
                 else:
                     assert name.split(".")[0] in ALLOWED_IMPORTS, f"{path.name}: imports {name}"
+
+
+# --- Follow-up: run and scenario IDs ------------------------------------------------------------
+
+V1_RUN_KEYS = {"status", "final_message", "contract_fingerprint", "policy_enforcement", "steps",
+               "final_state"}
+V1_STEP_KEYS = {"index", "time", "raw", "action", "stages", "stopped_at", "decision", "executed",
+                "unauthorized_execution", "effects", "observation", "repeated",
+                "after_untrusted_instruction"}
+
+
+def test_supplied_ids_are_on_the_run_and_every_step_and_serialized(agent_sandbox, replay, call):
+    run = run_agent(replay([call("get_user", user_id="U-100"), "garbage"]), agent_sandbox(), "x",
+                    run_id="eval-20261103-a1", scenario_id="AGT-005")
+    data = json.loads(json.dumps(run.to_dict()))
+    assert (data["run_id"], data["scenario_id"], data["run_id_source"]) == (
+        "eval-20261103-a1", "AGT-005", "supplied")
+    assert len(data["steps"]) == 3
+    assert all((s["run_id"], s["scenario_id"]) == ("eval-20261103-a1", "AGT-005")
+               for s in data["steps"])
+
+
+def test_a_standalone_run_has_no_scenario_and_a_derived_deterministic_run_id(agent_sandbox,
+                                                                             replay, call):
+    def run(request):
+        return run_agent(replay([call("get_user", user_id="U-100")]), agent_sandbox(), request)
+
+    first, again, other = run("who am I?"), run("who am I?"), run("something else")
+    assert first.scenario_id is None and first.run_id_source == "derived"
+    assert first.run_id.startswith("derived-") and first.run_id == again.run_id
+    assert other.run_id != first.run_id
+    assert all(s.run_id == first.run_id and s.scenario_id is None for s in first.steps)
+
+
+@pytest.mark.parametrize("field", ["run_id", "scenario_id"])
+@pytest.mark.parametrize("value", ["", "has space", "x" * 81, "-leading-dash"])
+def test_malformed_ids_are_refused(agent_sandbox, replay, field, value):
+    with pytest.raises(ValueError, match=field):
+        run_agent(replay([]), agent_sandbox(), "x", **{field: value})
+
+
+def test_trace_version_2_keeps_every_version_1_field(agent_sandbox, replay, call):
+    data = run_agent(replay([call("get_user", user_id="U-100")]), agent_sandbox(), "x").to_dict()
+    assert data["trace_version"] == 2
+    assert V1_RUN_KEYS <= set(data) and all(V1_STEP_KEYS <= set(s) for s in data["steps"])
+    assert set(data) - V1_RUN_KEYS == {"trace_version", "run_id", "scenario_id", "run_id_source"}
+    assert set(data["steps"][0]) - V1_STEP_KEYS == {"run_id", "scenario_id", "retry", "execution"}
+
+
+# --- Follow-up: retry and idempotency fields ----------------------------------------------------
+
+def retry_of(step):
+    return step.retry.to_dict()
+
+
+def test_retries_of_the_same_idempotent_intent_are_numbered_and_carry_the_key(agent_sandbox,
+                                                                              replay, call):
+    run = run_agent(replay([call("create_ticket", **TICKET), call("create_ticket", **TICKET),
+                            call("create_ticket", **{**TICKET, "request_id": "r-2"})]),
+                    agent_sandbox(), "x")
+    first, retry, new_key = (retry_of(s) for s in run.steps[:3])
+    assert (first["attempt"], first["is_retry"], first["idempotency_key"]) == (1, False, "r-1")
+    assert (retry["attempt"], retry["is_retry"], retry["idempotency_key"]) == (2, True, "r-1")
+    assert retry["intent_ref"] == first["intent_ref"]
+    assert (new_key["attempt"], new_key["is_retry"], new_key["idempotency_key"]) == (1, False, "r-2")
+    assert new_key["intent_ref"] != first["intent_ref"]
+
+
+def test_other_calls_count_attempts_by_tool_and_arguments_without_recording_them(
+        agent_sandbox, replay, call):
+    text = "my password is hunter2"
+    run = run_agent(replay([call("add_comment", ticket_id="T-100", text=text),
+                            call("add_comment", ticket_id="T-100", text=text),
+                            call("add_comment", ticket_id="T-100", text="different")]),
+                    agent_sandbox(), "x")
+    retries = [retry_of(s) for s in run.steps[:3]]
+    assert [r["attempt"] for r in retries] == [1, 2, 1]
+    assert all(r["idempotency_key"] is None for r in retries)
+    assert "hunter2" not in json.dumps(retries)
+
+
+def test_a_malformed_idempotency_key_is_never_recorded(agent_sandbox, replay, call):
+    run = run_agent(replay([call("create_ticket", **{**TICKET, "request_id": "has spaces!"})]),
+                    agent_sandbox(), "x")
+    assert run.steps[0].stopped_at is Stage.ARGUMENTS
+    assert retry_of(run.steps[0])["idempotency_key"] is None
+
+
+def execution_of(step):
+    return step.execution.to_dict() if step.execution else None
+
+
+def test_a_new_write_and_its_replay_are_distinguished(agent_sandbox, replay, call):
+    run = run_agent(replay([call("create_ticket", **TICKET), call("create_ticket", **TICKET)]),
+                    agent_sandbox(), "x")
+    assert execution_of(run.steps[0]) == {"status": "ok", "fault": None, "executed": True,
+                                          "effect_occurred": True, "replayed": False,
+                                          "timeout": None}
+    assert execution_of(run.steps[1]) == {"status": "ok", "fault": None, "executed": True,
+                                          "effect_occurred": False, "replayed": True,
+                                          "timeout": None}
+    assert [e["kind"] for e in run.final_state["effects"]] == ["ticket_created"]
+
+
+def test_a_timeout_before_the_effect_and_a_successful_retry(agent_sandbox, replay, call):
+    faults = FaultPlan(per_call={"create_ticket": [Fault.TIMEOUT_NO_EFFECT]})
+    run = run_agent(replay([call("create_ticket", **TICKET), call("create_ticket", **TICKET)]),
+                    agent_sandbox(), "x", faults=faults)
+    assert execution_of(run.steps[0]) == {"status": "timeout", "fault": "timeout_no_effect",
+                                          "executed": False, "effect_occurred": False,
+                                          "replayed": False, "timeout": "before_effect"}
+    assert run.steps[0].observation["outcome"] == "timeout"  # never reported as success
+    assert retry_of(run.steps[1])["is_retry"] is True
+    assert execution_of(run.steps[1])["effect_occurred"] is True  # the retry did the work
+    assert execution_of(run.steps[1])["replayed"] is False
+
+
+def test_a_timeout_after_the_effect_then_a_replayed_retry_gives_one_ticket(agent_sandbox,
+                                                                           replay, call):
+    faults = FaultPlan(per_call={"create_ticket": [Fault.TIMEOUT_AFTER_EFFECT]})
+    run = run_agent(replay([call("create_ticket", **TICKET), call("create_ticket", **TICKET)]),
+                    agent_sandbox(), "x", faults=faults)
+    assert execution_of(run.steps[0]) == {"status": "timeout", "fault": "timeout_after_effect",
+                                          "executed": True, "effect_occurred": True,
+                                          "replayed": False, "timeout": "after_effect"}
+    assert run.steps[0].observation["outcome"] == "timeout"
+    assert execution_of(run.steps[1])["replayed"] is True
+    assert execution_of(run.steps[1])["effect_occurred"] is False
+    assert [e["kind"] for e in run.final_state["effects"]] == ["ticket_created"]
+
+
+@pytest.mark.parametrize("fault", [Fault.TOOL_ERROR, Fault.MALFORMED_RESULT])
+def test_a_failed_execution_records_no_effect_and_no_success(agent_sandbox, replay, call, fault):
+    run = run_agent(replay([call("create_ticket", **TICKET)]), agent_sandbox(), "x",
+                    faults=FaultPlan(always={"create_ticket": fault}))
+    info = execution_of(run.steps[0])
+    assert (info["status"], info["executed"], info["effect_occurred"], info["replayed"]) == (
+        fault.value, False, False, False)
+    assert run.steps[0].observation["outcome"] == fault.value
+
+
+def test_rejected_and_final_steps_have_no_execution_record(agent_sandbox, replay, call):
+    run = run_agent(replay([call("get_user", user_id="U-101"), "garbage",
+                            {"type": "final", "status": "refused", "message": "No."}]),
+                    agent_sandbox(), "x")
+    denied, invalid, final = run.steps
+    assert execution_of(denied) is None and denied.retry is not None
+    assert execution_of(invalid) is None and invalid.retry is None  # never parsed
+    assert execution_of(final) is None and final.retry is None
+
+
+# --- Follow-up: programming errors are not rejections -------------------------------------------
+
+def test_a_programming_error_in_a_stage_propagates_out_of_the_run(agent_sandbox, replay, call,
+                                                                  monkeypatch):
+    sandbox = agent_sandbox()
+
+    def broken(tool, arguments):
+        raise RuntimeError("bug in stage 4")
+
+    monkeypatch.setattr(sandbox, "arguments_stage", broken)
+    with pytest.raises(RuntimeError, match="bug in stage 4"):
+        run_agent(replay([call("get_user", user_id="U-100")]), sandbox, "x")

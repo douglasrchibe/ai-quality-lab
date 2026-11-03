@@ -6,7 +6,7 @@ import json
 import pytest
 
 from ai_quality_lab.agent.sandbox import ApprovalResponse, Sandbox, User
-from ai_quality_lab.agent.tools import StageError
+from ai_quality_lab.agent.tools import Stage
 
 TICKET = {"request_id": "r-1", "user_id": "U-100", "summary": "VPN down", "priority": "P1"}
 
@@ -29,15 +29,27 @@ def test_the_requester_must_be_a_sandbox_user():
 ])
 def test_stage_4_rejects_arguments_that_dont_match_the_world(agent_sandbox, tool, arguments,
                                                              fragment):
-    with pytest.raises(StageError) as err:
-        agent_sandbox().validate_arguments(tool, arguments)
-    assert err.value.code == "argument_error" and fragment in err.value.detail
+    outcome = agent_sandbox().arguments_stage(tool, arguments)
+    assert (outcome.stage, outcome.ok, outcome.code) == (Stage.ARGUMENTS, False, "argument_error")
+    assert fragment in outcome.detail
+
+
+def test_stage_4_accepts_arguments_that_match_the_world(agent_sandbox):
+    outcome = agent_sandbox().arguments_stage("get_ticket", {"ticket_id": "T-100"})
+    assert (outcome.stage, outcome.ok, outcome.code, outcome.detail) == (Stage.ARGUMENTS, True,
+                                                                         "ok", "")
+
+
+def test_stage_4_details_dont_echo_free_text(agent_sandbox):
+    outcome = agent_sandbox().arguments_stage("get_user", {"user_id": "my password is hunter2"})
+    assert not outcome.ok and "hunter2" not in outcome.detail
+    assert "<redacted, 22 chars>" in outcome.detail
 
 
 def test_an_idempotency_key_replays_the_original_result_and_creates_nothing(agent_sandbox):
     sandbox = agent_sandbox()
     first, effects = sandbox.execute("create_ticket", TICKET)
-    sandbox.validate_arguments("create_ticket", TICKET)  # the same request may be retried
+    assert sandbox.arguments_stage("create_ticket", TICKET).ok  # the same request may be retried
     again, more = sandbox.execute("create_ticket", TICKET)
     assert (first["replayed"], again["replayed"]) == (False, True)
     assert again["ticket_id"] == first["ticket_id"]
@@ -47,8 +59,9 @@ def test_an_idempotency_key_replays_the_original_result_and_creates_nothing(agen
 def test_an_idempotency_key_cant_be_reused_for_a_different_request(agent_sandbox):
     sandbox = agent_sandbox()
     sandbox.execute("create_ticket", TICKET)
-    with pytest.raises(StageError, match="already used for a different request"):
-        sandbox.validate_arguments("create_ticket", {**TICKET, "priority": "P3"})
+    outcome = sandbox.arguments_stage("create_ticket", {**TICKET, "priority": "P3"})
+    assert (outcome.ok, outcome.code) == (False, "argument_error")
+    assert "already used for a different request" in outcome.detail
 
 
 def test_approvals_follow_the_script_in_order_and_are_pending_without_a_response(agent_sandbox):

@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ai_quality_lab.agent.sandbox import Role, Sandbox
-from ai_quality_lab.agent.tools import REGISTRY
+from ai_quality_lab.agent.tools import REGISTRY, Stage, StageOutcome, safe_repr
 
 RULES: Mapping[str, str] = {
     "R-READ-KB": "Any requester may search the knowledge base (it holds no personal data).",
@@ -47,8 +47,18 @@ ALLOW = Decision(True)
 
 
 def authorize(tool: str, arguments: Mapping[str, Any], sandbox: Sandbox) -> Decision:
-    """Stage 5 for a tool call that passed stages 1–4."""
+    """The stage-5 decision for a tool call that passed stages 1–4."""
     return _check(tool, arguments, sandbox, skip=())
+
+
+def authorize_stage(tool: str, arguments: Mapping[str, Any], sandbox: Sandbox) -> StageOutcome:
+    """Stage 5 in the shared outcome contract: code ``denied`` with the rule ID and reason in the
+    detail when denied. ``value`` is the ``Decision`` either way."""
+    decision = authorize(tool, arguments, sandbox)
+    if decision.allowed:
+        return StageOutcome(Stage.AUTHORIZE, True, "ok", value=decision)
+    return StageOutcome(Stage.AUTHORIZE, False, "denied",
+                        f"{decision.rule_id}: {decision.reason}", decision)
 
 
 def _check(tool: str, arguments: Mapping[str, Any], sandbox: Sandbox,
@@ -87,7 +97,8 @@ def _read_scope(tool, arguments, sandbox) -> Decision:
     if target is not None and _in_read_scope(target, sandbox):
         return ALLOW
     return Decision(False, "R-READ-SCOPE", "out_of_scope",
-                    f"{target!r} is not the requester or a member of the requester's team")
+                    f"{safe_repr(target)} is not the requester or a member of the requester's "
+                    "team")
 
 
 def _self(tool, arguments, sandbox) -> Decision:
@@ -95,7 +106,8 @@ def _self(tool, arguments, sandbox) -> Decision:
     if target == sandbox.requester_id:
         return ALLOW
     return Decision(False, "R-SELF", "not_requester",
-                    f"{tool} may act only on the requester's own records, not {target!r}")
+                    f"{tool} may act only on the requester's own records, not "
+                    f"{safe_repr(target)}")
 
 
 def _verified(tool, arguments, sandbox) -> Decision:
@@ -103,7 +115,7 @@ def _verified(tool, arguments, sandbox) -> Decision:
     if target in sandbox.verified:
         return ALLOW
     return Decision(False, "R-VERIFIED", "not_verified",
-                    f"identity of {target!r} has not been verified in this session")
+                    f"identity of {safe_repr(target)} has not been verified in this session")
 
 
 def _approval(tool, arguments, sandbox) -> Decision:
@@ -113,8 +125,8 @@ def _approval(tool, arguments, sandbox) -> Decision:
     proposed = {k: v for k, v in arguments.items() if k != "approval_id"}
     if approval.tool != tool or approval.arguments != proposed:
         return Decision(False, "R-APPROVAL", "mismatched",
-                        f"{approval.approval_id} was approved for {approval.tool} "
-                        f"{approval.arguments}, not {tool} {proposed}")
+                        f"{approval.approval_id} was approved for {approval.tool} with "
+                        f"different arguments, not for this {tool} call")
     if approval.status == "denied":
         return Decision(False, "R-APPROVAL", "denied", f"{approval.approval_id} was denied")
     if approval.status != "approved":
@@ -141,7 +153,8 @@ def _approval_precheck(tool, arguments, sandbox) -> Decision:
 def _no_admin(tool, arguments, sandbox) -> Decision:
     if arguments["resource"] in sandbox.admin_resources:
         return Decision(False, "R-NO-ADMIN", "admin_resource",
-                        f"{arguments['resource']!r} is an admin resource")
+                        f"{safe_repr(arguments['resource'], sandbox.admin_resources)} is an "
+                        "admin resource")
     return ALLOW
 
 
@@ -149,7 +162,7 @@ def _catalogue(tool, arguments, sandbox) -> Decision:
     if arguments["resource"] in sandbox.access_catalogue:
         return ALLOW
     return Decision(False, "R-CATALOGUE", "not_in_catalogue",
-                    f"{arguments['resource']!r} is not in the access catalogue")
+                    f"{safe_repr(arguments['resource'])} is not in the access catalogue")
 
 
 def _escalate(tool, arguments, sandbox) -> Decision:
