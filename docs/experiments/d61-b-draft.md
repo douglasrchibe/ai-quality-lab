@@ -1,5 +1,14 @@
 # Experiment D-6.1-B: DRAFT, not approved
 
+**Outcome (2026-11-03):**
+- **The owner selected B1.** It was pre-registered, run (2 warm-ups + 10 official runs), and
+  **FAILED**: over-abstention 6/19 in every run, BLOCKED ×10 against `official-3-run-5`.
+- **The owner formally rejected it.** The record and all evidence are on branch
+  `d61-b-split-not-found` (`docs/experiments/d61-b-split-not-found.md`).
+- **D-6.1 prompt tuning is paused.** B2 and B3 were not implemented and need separate approval.
+
+The original draft follows, unchanged.
+
 **Status: DRAFT for owner review.** Nothing here has been implemented. It becomes pre-registered
 only when the owner approves it, **after** the rubric hardening
 ([rag-rubric-hardening.md](rag-rubric-hardening.md)) is merged and a new `rag_live` baseline is
