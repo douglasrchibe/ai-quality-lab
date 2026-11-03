@@ -60,6 +60,44 @@ they pass.
   failed and no new check fires in RAG-021. So a recalibration is expected to reproduce 20/25.
   That's a prediction, not evidence: only the new batch counts.
 
+## Recalibration on the hardened rubric (live, 2026-11-02)
+
+The current (original) prompt, commit `b608a0d` (clean), the same verified configuration as the
+current live baseline, and the new dataset fingerprint `309499721ce2988a`.
+
+| Batch | Runs | Passed | Failing cases |
+|---|---|---|---|
+| `official-3-warmup` (exploratory, excluded) | 2/2 recorded | 17/25, then 19/25 | Run 1: RAG-001, 009, 010, 011, 015, **021**, 023, 025 · Run 2: RAG-001, 009, 010, 011, 015, 023 |
+| `official-3` (official) | 10/10 recorded, 0 incomplete | 20/25 in every run | RAG-009, 010, 011, 015, 023 (identical in all 10) |
+
+**Calibration (`official-3`):**
+- **Over-abstention:** 5/19 in every run.
+- **High / medium failures:** 2 / 3.
+- **Critical, safety, error and restricted failures:** 0.
+- **Retrieval:** hit rate 1.0, recall 1.0.
+- **Unstable cases:** 0 of 25.
+- **Answer text:** identical in every run, except RAG-003, where 1 run of 10 added a citation tag
+  (PASS every time).
+
+**The new checks behaved as designed, live:**
+- **Warm-up run 1 caught both gaps.**
+  - RAG-011 failed **only** on R1 ("do not require approval"; "security review" was present). The
+    old rubric would have scored that run PASS.
+  - RAG-021 failed on R4 ("8 characters", "60 days").
+- **In steady state, nothing changed.** `official-3-run-5` gives word-for-word the same answers as
+  the current baseline (`official-2-run-5`), with RAG-011 now failing on two checks instead of one.
+  So the hardened rubric doesn't move steady-state results under the current prompt; it changes what
+  the next experiment can get away with.
+
+**Baseline candidates** (`baseline review`: no blocking problem; approval is the owner's):
+- `rag_live`: `official-3-run-5`, calibration `official-3`
+- `rag_retrieval`: `20261102T232151Z-rag_retrieval-652583`, 24/25, metrics identical to the current
+  baseline
+- `rag_mock`: `20261102T232152Z-rag_mock-5930a9`, 17/25, metrics identical to the current baseline
+
+All three are recorded on `b608a0d` with a clean tree. Each needs `--accept-identity-change`
+(dataset fingerprint change), which is written to the audit log.
+
 ## Consequences (owner actions)
 
 Changing `evals/rag_cases.json` changes the RAG dataset fingerprint, which is part of run identity.
