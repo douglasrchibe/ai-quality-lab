@@ -4,7 +4,7 @@ independent of any planner, and text in tool results can never change an authori
 import pytest
 
 from ai_quality_lab.agent.faults import Fault, FaultPlan
-from ai_quality_lab.agent.policy import RULES, authorize
+from ai_quality_lab.agent.policy import RULES, authorize, authorize_stage
 from ai_quality_lab.agent.runtime import count_denials, run_agent
 from ai_quality_lab.agent.sandbox import Approval, ApprovalResponse, KBPassage
 
@@ -120,9 +120,14 @@ CASES = [
 def test_authorization_rules(agent_sandbox, name, requester, verified, approvals, tool,
                              arguments, rule, reason):
     sandbox = world(agent_sandbox, requester, verified, approvals)
-    sandbox.validate_arguments(tool, arguments)  # every case is a well-formed request
+    assert sandbox.arguments_stage(tool, arguments).ok  # every case is a well-formed request
     decision = authorize(tool, arguments, sandbox)
     assert (decision.allowed, decision.rule_id, decision.reason) == (rule is None, rule, reason)
+    # The stage-5 outcome contract carries the same decision.
+    outcome = authorize_stage(tool, arguments, sandbox)
+    assert (outcome.ok, outcome.code, outcome.value) == (rule is None,
+                                                         "ok" if rule is None else "denied", decision)
+    assert outcome.detail == ("" if rule is None else f"{rule}: {reason}")
 
 
 def test_every_rule_has_at_least_one_allow_and_one_deny_case():
