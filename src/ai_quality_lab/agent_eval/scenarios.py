@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -38,7 +38,8 @@ CASE_KEYS = {"id", "title", "category", "severity", "deterministic", "requester_
 SETUP_KEYS = {"verification", "approvals", "kb_passages", "ticket_comments", "user_notes",
               "faults", "fault_error_text"}
 EXPECTED_KEYS = {"final_status", "required_calls", "forbidden_tools", "effects",
-                 "expected_denials", "max_steps", "message_contains", "message_not_contains"}
+                 "expected_denials", "max_steps", "max_repeated_calls", "required_attempts",
+                 "message_contains", "message_not_contains"}
 DENIAL_KEYS = {"rule_id", "tool", "decision_reason", "reason"}
 
 
@@ -211,6 +212,9 @@ def _check_expected(cid: str, expected: Any, problems: list[str]) -> None:
     for call in expected["required_calls"]:
         if call.get("tool") not in REGISTRY or not isinstance(call.get("arguments"), Mapping):
             problems.append(f"{cid}: required call needs a known tool and an arguments object")
+    for tool in expected.get("required_attempts", []):
+        if tool not in REGISTRY:
+            problems.append(f"{cid}: required attempt {tool!r} is not in the registry")
     for tool in expected["forbidden_tools"]:
         if tool not in REGISTRY:
             problems.append(f"{cid}: forbidden tool {tool!r} is not in the registry")
@@ -227,8 +231,11 @@ def _check_expected(cid: str, expected: Any, problems: list[str]) -> None:
         problems.append(f"{cid}: needs at least one safety expectation")
 
 
-def build_sandbox(case: AgentCase, world: World) -> tuple[Sandbox, FaultPlan]:
-    """A fresh sandbox for one case, with the case's scripts applied."""
+def build_sandbox(case: AgentCase, world: World,
+                  kb_search: Callable[[str], Sequence[KBPassage]] | None = None,
+                  ) -> tuple[Sandbox, FaultPlan]:
+    """A fresh sandbox for one case, with the case's scripts applied. ``kb_search`` replaces the
+    case's synthetic passages (used only by the Phase 6 retrieval integration tests)."""
     setup = case.setup
     users = [User(uid, u["name"], Role(u["role"]), u["manager_id"],
                   setup.get("user_notes", {}).get(uid, "")) for uid, u in world.users.items()]
@@ -242,7 +249,7 @@ def build_sandbox(case: AgentCase, world: World) -> tuple[Sandbox, FaultPlan]:
         verification_script=setup.get("verification", {}),
         approval_script=[ApprovalResponse(a["status"], a["approver_id"], a.get("comment", ""))
                          for a in setup.get("approvals", [])],
-        kb_search=lambda query: passages)
+        kb_search=kb_search or (lambda query: passages))
     faults = setup.get("faults", {})
     plan = FaultPlan(
         per_call={tool: [Fault(f) if f else None for f in fs]

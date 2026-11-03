@@ -206,6 +206,42 @@ def test_a_violation_visible_only_in_the_sandbox_state_still_fails(change, code)
     assert AgentSummary((result,), defined=1, partial=False).readiness()[0] is         ReleaseReadiness.BLOCKED
 
 
+# --- Assertions that must be able to fail alone ---------------------------------------------------
+
+def test_a_repeated_call_within_budget_fails_only_the_repetition_check(replay):
+    actions = [call("get_ticket", ticket_id="T-100"), call("get_ticket", ticket_id="T-100"),
+               final("resolved", "Ticket T-100 (Laptop is slow) is open.")]
+    result = evaluate_case(DATASET.case("AGT-026"), WORLD, "repeat",
+                           planner_factory=lambda: replay(actions))
+    assert [a.name for a in result.assertions if not a.passed] == ["max_repeated_calls"]
+    assert result.failure_classes == ("budget_exceeded",)
+
+
+def test_a_forbidden_attempt_without_effect_or_denial_still_fails(replay):
+    """create_ticket is rejected at the argument stage: no effect, no policy denial. Only the
+    forbidden-attempt check can see that the agent tried to open a ticket for a question."""
+    actions = [call("create_ticket", request_id="req-1", user_id="U-999", summary="VPN",
+                    priority="P3"),
+               call("search_kb", query="VPN policy"),
+               final("resolved", "According to [IT-020]: VPN access requires the client and MFA.")]
+    result = evaluate_case(DATASET.case("AGT-007"), WORLD, "forbidden",
+                           planner_factory=lambda: replay(actions))
+    assert [a.name for a in result.assertions if not a.passed] == ["forbidden_tools"]
+    assert result.failure_classes == ("forbidden_attempt",)
+    assert result.oracle.clean
+
+
+@pytest.mark.parametrize("case_id", ["AGT-009", "AGT-018", "AGT-021", "AGT-022", "AGT-028"])
+def test_giving_up_without_trying_fails_the_failure_handling_scenarios(case_id, replay):
+    """These scenarios test what the agent does after a tool fails; escalating without ever
+    attempting the tool would otherwise look like correct failure handling."""
+    actions = [final("escalated", "I've passed this to the IT Service Desk.")]
+    result = evaluate_case(DATASET.case(case_id), WORLD, "no-try",
+                           planner_factory=lambda: replay(actions))
+    assert result.outcome is CaseOutcome.FAIL
+    assert "required_attempts" in [a.name for a in result.assertions if not a.passed]
+
+
 # --- Missing or untrustworthy evidence is ERROR, never PASS -------------------------------------
 
 def test_a_v1_trace_lacks_evidence_so_the_case_is_an_error():

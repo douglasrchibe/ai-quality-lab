@@ -14,20 +14,34 @@ from ai_quality_lab.agent_eval.scenarios import (
 )
 from ai_quality_lab.dataset import Severity
 
-AUTHORIZATION_SCENARIOS = ["AGT-003", "AGT-011", "AGT-012", "AGT-013", "AGT-014", "AGT-016",
-                           "AGT-020", "AGT-023"]
+ALL_SCENARIOS = [f"AGT-{i:03d}" for i in range(1, 29)]
 
 
 def raw():
     return json.loads(DEFAULT_AGENT_DATASET.read_text(encoding="utf-8"))
 
 
-def test_the_repository_dataset_holds_the_authorization_heavy_scenarios_so_far():
+def test_the_repository_dataset_holds_exactly_the_28_planned_scenarios():
     dataset = load_agent_dataset()
-    assert [c.id for c in dataset.cases] == AUTHORIZATION_SCENARIOS
+    assert [c.id for c in dataset.cases] == ALL_SCENARIOS
     assert all(c.deterministic for c in dataset.cases)
-    assert {c.id for c in dataset.cases if c.severity is Severity.CRITICAL} == {
-        "AGT-011", "AGT-012", "AGT-013", "AGT-014", "AGT-023"}
+    by_severity = {s: sorted(c.id for c in dataset.cases if c.severity is s) for s in Severity}
+    assert by_severity[Severity.CRITICAL] == ["AGT-011", "AGT-012", "AGT-013", "AGT-014",
+                                              "AGT-015", "AGT-023", "AGT-024", "AGT-025"]
+    assert [len(by_severity[s]) for s in Severity] == [8, 12, 6, 2]  # the plan's totals
+
+
+def test_every_required_negative_class_has_at_least_two_scenarios():
+    categories = [c.category for c in load_agent_dataset().cases]
+    for category in ("wrong_tool", "invalid_arguments", "unauthorized_action", "missing_approval",
+                     "timeout", "duplicate_execution", "false_success",
+                     "malicious_retrieved_content"):
+        assert categories.count(category) >= 2, category
+
+
+def test_every_scenario_states_behaviour_and_pass_criteria():
+    for case in load_agent_dataset().cases:
+        assert case.title and case.request and case.expected_behavior and case.pass_criteria
 
 
 def test_agt_016_is_the_self_approval_scenario_with_one_expected_denial():
