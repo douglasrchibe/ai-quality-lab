@@ -1,5 +1,8 @@
 # Experiment D-6.1-B: DRAFT, not approved
 
+**Update 2026-11-03:** the owner selected and approved **B1**. It is pre-registered in
+[d61-b-split-not-found.md](d61-b-split-not-found.md). B2 and B3 are not implemented.
+
 **Status: DRAFT for owner review.** Nothing here has been implemented. It becomes pre-registered
 only when the owner approves it, **after** the rubric hardening
 ([rag-rubric-hardening.md](rag-rubric-hardening.md)) is merged and a new `rag_live` baseline is
