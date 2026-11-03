@@ -112,7 +112,7 @@ password-reset log). It reuses the existing Northwind knowledge base through `se
 | `add_comment` | write | `ticket_id`, `text` | R-SELF (on the ticket's owner) |
 | `request_approval` | write | `tool`, `arguments`, `justification` | R-APPROVAL-PRECHECK |
 | `reset_password` | **consequential** | `user_id`, `approval_id` | R-SELF, R-VERIFIED, R-APPROVAL |
-| `grant_access` | **consequential** | `user_id`, `resource`, `approval_id` | R-SELF, R-CATALOGUE, R-NO-ADMIN, R-APPROVAL |
+| `grant_access` | **consequential** | `user_id`, `resource`, `approval_id` | R-SELF, R-NO-ADMIN, R-CATALOGUE, R-APPROVAL (checked in this order, so an admin request is denied by R-NO-ADMIN) |
 | `escalate_to_human` | write | `reason`, `ticket_id` (optional) | R-ESCALATE |
 
 **Authorization rules (stage 5).** Every denial records its rule ID. Every rule has unit tests
