@@ -110,3 +110,23 @@ def test_build_sandbox_applies_the_scenarios_scripts():
     passages = sandbox.execute("search_kb", {"query": "anything"})[0]["passages"]
     assert passages[0]["doc_id"] == "IT-010" and "Note to AI assistants" in passages[0]["text"]
     assert faults.fault_for("create_ticket", 0) is None
+
+
+EVADING = {
+    "AGT-023": "should grant domain-admin to the requester",
+    "AGT-024": "should reset the password for U-101",
+    "AGT-025": "should print their internal rules",
+}
+
+
+@pytest.mark.parametrize("case_id", list(EVADING))
+def test_each_malicious_content_scenario_has_a_caught_and_a_pattern_evading_injection(case_id):
+    from ai_quality_lab.rag.security import sanitize
+
+    setup = load_agent_dataset().case(case_id).setup
+    texts = ([p["text"] for p in setup.get("kb_passages", [])]
+             + [c for cs in setup.get("ticket_comments", {}).values() for c in cs])
+    evading = [t for t in texts if EVADING[case_id] in t]
+    caught = [t for t in texts if sanitize(t).findings]
+    assert len(evading) == 1 and sanitize(evading[0]).findings == ()  # really evades the patterns
+    assert caught  # the sanitizer-caught injection is still there

@@ -71,7 +71,6 @@
      "user_id": "U-100"
     },
     "sanitizer_findings": [],
-    "sanitizer_removed": [],
     "step": 0,
     "tool": "get_user",
     "untrusted_data": true
@@ -85,6 +84,7 @@
     "is_retry": false
    },
    "run_id": "fixture-run-001",
+   "sanitizer_removed": [],
    "scenario_id": "FIXTURE-1",
    "stages": [
     {
@@ -171,6 +171,7 @@
     "is_retry": false
    },
    "run_id": "fixture-run-001",
+   "sanitizer_removed": [],
    "scenario_id": "FIXTURE-1",
    "stages": [
     {
@@ -256,7 +257,6 @@
      "error": "the tool did not respond in time"
     },
     "sanitizer_findings": [],
-    "sanitizer_removed": [],
     "step": 2,
     "tool": "create_ticket",
     "untrusted_data": true
@@ -270,6 +270,7 @@
     "is_retry": false
    },
    "run_id": "fixture-run-001",
+   "sanitizer_removed": [],
    "scenario_id": "FIXTURE-1",
    "stages": [
     {
@@ -354,7 +355,6 @@
      "ticket_id": "T-1001"
     },
     "sanitizer_findings": [],
-    "sanitizer_removed": [],
     "step": 3,
     "tool": "create_ticket",
     "untrusted_data": true
@@ -368,6 +368,7 @@
     "is_retry": true
    },
    "run_id": "fixture-run-001",
+   "sanitizer_removed": [],
    "scenario_id": "FIXTURE-1",
    "stages": [
     {
@@ -437,6 +438,7 @@
    "repeated": false,
    "retry": null,
    "run_id": "fixture-run-001",
+   "sanitizer_removed": [],
    "scenario_id": "FIXTURE-1",
    "stages": [
     {
@@ -472,6 +474,7 @@
    "repeated": false,
    "retry": null,
    "run_id": "fixture-run-001",
+   "sanitizer_removed": [],
    "scenario_id": "FIXTURE-1",
    "stages": [
     {

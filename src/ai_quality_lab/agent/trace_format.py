@@ -5,7 +5,9 @@
   ``retry`` and ``execution``.
 * v3: removes the test-only policy switch from the runtime. The run's ``policy_enforcement`` and
   each step's ``unauthorized_execution`` are gone: whether an action was authorized is decided by
-  the independent evaluator from evidence, never from a runtime flag.
+  the independent evaluator from evidence, never from a runtime flag. Text the sanitizer removed
+  moves out of the planner-visible ``observation`` into the step's own ``sanitizer_removed``
+  (evaluation evidence only).
 
 ``upgrade_trace`` reads any of the three and returns the v3 shape. Fields a version can't provide
 are set to ``None`` and listed in ``missing_evidence``, so a consumer can refuse to pass a case on
@@ -62,6 +64,9 @@ def upgrade_trace(data: Mapping[str, Any]) -> dict[str, Any]:
                 legacy[name] = trace.pop(name)
         flagged = [s["index"] for s in trace["steps"] if s.pop("unauthorized_execution", False)]
         legacy["unauthorized_execution_steps"] = flagged
+        for step in trace["steps"]:  # removed text is step evidence in v3, not observation data
+            observation = step.get("observation") or {}
+            step["sanitizer_removed"] = list(observation.pop("sanitizer_removed", None) or [])
 
     trace["trace_version"] = TRACE_VERSION
     trace["source_trace_version"] = version

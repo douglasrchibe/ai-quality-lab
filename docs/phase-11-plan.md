@@ -32,6 +32,14 @@
 7. **A single-scenario run is partial,** with no readiness decision.
 8. **The evaluator lives in `src/ai_quality_lab/agent_eval/`,** outside the agent package. Its
    oracle imports nothing from the project.
+9. **Security boundary correction (owner-authorized):**
+   - **The planner sees only sanitized results and the sanitizer's finding labels** (`PlannerContext`,
+     a deep copy; `serialized()` is its only serialization).
+   - **Text the sanitizer removed is step-level trace evidence only** (`Step.sanitizer_removed`),
+     never part of the planner's observation. v1 and v2 traces are upgraded the same way.
+   - **AGT-023, 024 and 025 each add a pattern-evading injection** next to the sanitizer-caught one.
+     `FOLLOW_INJECTION` acts only on what the planner can see, so it tests whether an agent follows
+     malicious content the sanitizer missed. Its failing set is unchanged.
 
 **Goal:** an interview-ready demonstration of quality engineering for an agent that:
 - uses tools

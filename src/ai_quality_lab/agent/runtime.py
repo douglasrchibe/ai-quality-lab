@@ -17,10 +17,18 @@ intent reference, the validated idempotency key). Once a step reaches stage 6 it
 ``execution`` (status, injected fault, whether it executed, whether an effect occurred, whether a
 write was replayed, and whether a timeout came before or after the effect). Older traces are read
 through ``trace_format.upgrade_trace``.
+
+Security boundary: the planner sees only ``PlannerContext`` (the request, the requester, and a deep
+copy of each planner-visible observation: the sanitized result and the sanitizer's finding labels).
+Text the sanitizer removed is evaluation evidence only: it is kept on the step
+(``Step.sanitizer_removed``), never in the observation, so it can't reach the planner directly or
+through a shared object. ``PlannerContext.serialized()`` is the one serialization a model-backed
+planner may send.
 """
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import itertools
 import json
@@ -113,6 +121,7 @@ class Step:
     observation: dict[str, Any] | None = None
     repeated: bool = False  # same tool call as an earlier step
     after_untrusted_instruction: bool = False  # an earlier result had instruction-like text
+    sanitizer_removed: list[str] = field(default_factory=list)  # evidence only: never planner-visible
     retry: RetryInfo | None = None  # tool calls only
     execution: ExecutionInfo | None = None  # tool calls that reached stage 6
 
@@ -135,6 +144,7 @@ class Step:
             "executed": self.executed,
             "effects": self.effects, "observation": self.observation, "repeated": self.repeated,
             "after_untrusted_instruction": self.after_untrusted_instruction,
+            "sanitizer_removed": list(self.sanitizer_removed),
             "retry": self.retry.to_dict() if self.retry else None,
             "execution": self.execution.to_dict() if self.execution else None,
         }
@@ -161,11 +171,18 @@ class AgentRun:
 
 @dataclass(frozen=True)
 class PlannerContext:
-    """What a planner sees: the request, who is asking, and every observation so far."""
+    """Everything a planner sees: the request, who is asking, and every planner-visible
+    observation so far (deep copies: the sanitized result and finding labels, never removed text)."""
     request: str
     requester_id: str
     step: int
     observations: tuple[Mapping[str, Any], ...]
+
+    def serialized(self) -> str:
+        """The planner's input as JSON: the only serialization a model-backed planner may send."""
+        return json.dumps({"request": self.request, "requester_id": self.requester_id,
+                           "step": self.step, "observations": list(self.observations)},
+                          sort_keys=True, ensure_ascii=False)
 
 
 class Planner(Protocol):
@@ -213,7 +230,7 @@ def run_agent(planner: Planner, sandbox: Sandbox, request: str, *,
         if final is not None:
             status, final_message = RunStatus(final.status), final.message
             break
-        observations.append(step.observation or {})
+        observations.append(copy.deepcopy(step.observation or {}))  # the planner's own copy
         if step.observation and step.observation.get("sanitizer_findings"):
             untrusted_instruction_seen = True
         invalid_streak = invalid_streak + 1 if step.stopped_at in _INVALID_STAGES else 0
@@ -339,8 +356,8 @@ def _observation(step: Step, tool: str | None, outcome: str, payload: Any,
         removed: list[str] = []
         findings: list[str] = []
         observation["result"] = _sanitize_strings(payload, removed, findings)
-        observation["sanitizer_removed"] = removed
-        observation["sanitizer_findings"] = list(dict.fromkeys(findings))
+        observation["sanitizer_findings"] = list(dict.fromkeys(findings))  # labels only
+        step.sanitizer_removed = removed  # evidence for evaluation; never planner-visible
     step.stages.append(StageOutcome(Stage.RESULT, True, "delivered",
                                     "untrusted" if not trusted else "runtime message"))
     return observation

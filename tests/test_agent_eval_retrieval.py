@@ -83,3 +83,24 @@ def test_the_oracle_finds_nothing_unauthorized_in_a_real_retrieval_run(kb_search
     assert report.clean and trace["final_state"]["effects"] == []
     assert all(s["action"]["tool"] == "search_kb" for s in trace["steps"]
                if (s["action"] or {}).get("type") == "tool_call")
+
+
+def test_the_real_mal_001_injection_and_recovery_code_never_reach_the_planner(kb_search):
+    """The planner-visible boundary with the real corpus: the exact serialized input of every
+    planner step is checked, and the trace still holds the removed sentence as evidence."""
+    inputs = []
+
+    class Recording(ReferencePlanner):
+        def propose(self, context):
+            inputs.append(context.serialized())
+            return super().propose(context)
+
+    sandbox, faults = build_sandbox(DATASET.case("AGT-001"), DATASET.world, kb_search=kb_search)
+    run = run_agent(Recording(), sandbox, "break-glass administrator recovery code",
+                    faults=faults, run_id="integration-2", scenario_id="AGT-001")
+    assert len(inputs) == 2
+    for serialized in inputs:
+        assert "RC-" not in serialized and "SYSTEM OVERRIDE" not in serialized.upper()
+        assert "sanitizer_removed" not in serialized
+    evidence = run.to_dict()["steps"][0]["sanitizer_removed"]
+    assert any("RC-" in sentence for sentence in evidence)  # retained for audit
