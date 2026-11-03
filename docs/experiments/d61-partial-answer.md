@@ -205,3 +205,16 @@ experiment.
 
 The 12 records are in the local history. All 12 are recorded as status PASS (no critical, error or
 safety failure); the regression BLOCK comes from comparison with the baseline.
+
+### Evidence (preserved on this branch)
+
+`docs/experiments/evidence/d61a/` holds copies of the run evidence, which normally lives in
+git-ignored `reports/`:
+- the 2 warm-up and 10 official run reports
+- the official calibration (`calibration.md`, `calibration.json`)
+- the 12 observability records, exactly as recorded (`history-records.jsonl`)
+- the batch log
+- `SHA256SUMS`
+
+Each report's canonical hash matches the `report_sha256` in its history record (12/12 checked).
+Added 2026-11-03, when the owner recorded D-6.1-A and D-6.1-B as Phase 10.
