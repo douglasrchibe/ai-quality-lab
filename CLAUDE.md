@@ -61,6 +61,8 @@ quality gates. This is a learning/portfolio project for AI-evaluation QA automat
 | `src/ai_quality_lab/llm_eval.py` | DeepEval runner: judge, metrics, checks, summary, CLI |
 | `src/ai_quality_lab/rag/` | Phase 6 RAG: documents, chunking, embeddings, vector_store, index, retrieval, security, prompting, chatbot, mock_llm, dataset, retrieval_metrics, failures, evaluate, ragas_eval |
 | `src/ai_quality_lab/agent/` | Phase 11 sandboxed agent: `tools` (contract, stages 1–3), `sandbox` (state, stage 4, execution), `policy` (stage 5 rules), `faults`, `runtime` (loop, trace v3 with run/scenario IDs and retry/execution fields, denial counts), `trace_format` (v1-v3 upgrade). Every stage returns a `StageOutcome`; rejection details never echo planner text. Authorization cannot be disabled; a broken-policy substitute exists only in tests. No network/filesystem imports (tested) |
+| `src/ai_quality_lab/agent_eval/` | Phase 11.2 agent evaluation, outside the agent package: `scenarios` (dataset schema, sandbox setup), `oracle` (independent checks on plain data; imports nothing from the project, tested), `planner` (ReferencePlanner), `evaluate` (assertions, case/suite results, readiness) |
+| `evals/agent_cases.json` | Agent scenarios (AGT-0xx): world facts, per-case scripts, expected behaviour |
 | `data/knowledge_base/` | 16 synthetic documents (MAL-* adversarial, RES-001 restricted) |
 | `evals/rag_cases.json` | RAG ground truth (reference context, relevant doc IDs, facts) |
 | `src/ai_quality_lab/console.py` | UTF-8 console output and crash-is-ERROR (exit 2) handling for the PASS/BLOCKED/ERROR CLIs |
