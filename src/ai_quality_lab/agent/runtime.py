@@ -8,18 +8,27 @@ every string is passed through the Phase 6 sanitizer, and nothing in a result ca
 requester, permissions, approvals or policy (stage 5 reads only the sandbox's structured state).
 
 The loop stops on a final action, at the step limit, or after too many consecutive invalid actions
-(stages 1–4). ``policy_enforcement=False`` is test-only: stage 5 still records its decision, but a
-denied action executes, so tests can prove the evaluator catches unauthorized executions.
+(stages 1–4). Authorization can't be switched off: a denied action never executes. (Tests that need
+a broken policy substitute stage 5 inside the test process only.)
 
-Trace schema (``TRACE_VERSION`` 2, additive over version 1): the run and every step carry
-``run_id`` and ``scenario_id``. Each tool-call step has ``retry`` (attempt number, whether it's a
-retry, a hashed intent reference, the validated idempotency key). Once a step reaches stage 6 it
-also has ``execution`` (status, injected fault, whether it executed, whether an effect occurred,
-whether a write was replayed, and whether a timeout came before or after the effect).
+Trace schema (``trace_format.TRACE_VERSION`` 3): the run and every step carry ``run_id`` and
+``scenario_id``. Each tool-call step has ``retry`` (attempt number, whether it's a retry, a hashed
+intent reference, the validated idempotency key). Once a step reaches stage 6 it also has
+``execution`` (status, injected fault, whether it executed, whether an effect occurred, whether a
+write was replayed, and whether a timeout came before or after the effect). Older traces are read
+through ``trace_format.upgrade_trace``.
+
+Security boundary: the planner sees only ``PlannerContext`` (the request, the requester, and a deep
+copy of each planner-visible observation: the sanitized result and the sanitizer's finding labels).
+Text the sanitizer removed is evaluation evidence only: it is kept on the step
+(``Step.sanitizer_removed``), never in the observation, so it can't reach the planner directly or
+through a shared object. ``PlannerContext.serialized()`` is the one serialization a model-backed
+planner may send.
 """
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import itertools
 import json
@@ -43,11 +52,11 @@ from ai_quality_lab.agent.tools import (
     schema_stage,
     select_stage,
 )
+from ai_quality_lab.agent.trace_format import TRACE_VERSION
 from ai_quality_lab.rag.security import sanitize
 
 DEFAULT_STEP_LIMIT = 8
 DEFAULT_MAX_CONSECUTIVE_INVALID = 2
-TRACE_VERSION = 2
 RUN_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$")
 IDEMPOTENT_TOOLS = ("create_ticket",)  # writes keyed by request_id
 
@@ -108,11 +117,11 @@ class Step:
     action: dict[str, Any] | None = None
     decision: Decision | None = None
     executed: bool = False
-    unauthorized_execution: bool = False  # denied by policy but executed (enforcement off)
     effects: list[dict[str, Any]] = field(default_factory=list)
     observation: dict[str, Any] | None = None
     repeated: bool = False  # same tool call as an earlier step
     after_untrusted_instruction: bool = False  # an earlier result had instruction-like text
+    sanitizer_removed: list[str] = field(default_factory=list)  # evidence only: never planner-visible
     retry: RetryInfo | None = None  # tool calls only
     execution: ExecutionInfo | None = None  # tool calls that reached stage 6
 
@@ -132,9 +141,10 @@ class Step:
             "stages": [s.to_dict() for s in self.stages],
             "stopped_at": self.stopped_at.value if self.stopped_at else None,
             "decision": self.decision.to_dict() if self.decision else None,
-            "executed": self.executed, "unauthorized_execution": self.unauthorized_execution,
+            "executed": self.executed,
             "effects": self.effects, "observation": self.observation, "repeated": self.repeated,
             "after_untrusted_instruction": self.after_untrusted_instruction,
+            "sanitizer_removed": list(self.sanitizer_removed),
             "retry": self.retry.to_dict() if self.retry else None,
             "execution": self.execution.to_dict() if self.execution else None,
         }
@@ -147,7 +157,6 @@ class AgentRun:
     steps: tuple[Step, ...]
     final_state: Mapping[str, Any]
     contract_fingerprint: str
-    policy_enforcement: bool
     run_id: str = ""
     scenario_id: str | None = None
     run_id_source: str = "derived"  # "supplied" by the caller, or "derived" from the inputs
@@ -157,17 +166,23 @@ class AgentRun:
                 "scenario_id": self.scenario_id, "run_id_source": self.run_id_source,
                 "status": self.status.value, "final_message": self.final_message,
                 "contract_fingerprint": self.contract_fingerprint,
-                "policy_enforcement": self.policy_enforcement,
                 "steps": [s.to_dict() for s in self.steps], "final_state": dict(self.final_state)}
 
 
 @dataclass(frozen=True)
 class PlannerContext:
-    """What a planner sees: the request, who is asking, and every observation so far."""
+    """Everything a planner sees: the request, who is asking, and every planner-visible
+    observation so far (deep copies: the sanitized result and finding labels, never removed text)."""
     request: str
     requester_id: str
     step: int
     observations: tuple[Mapping[str, Any], ...]
+
+    def serialized(self) -> str:
+        """The planner's input as JSON: the only serialization a model-backed planner may send."""
+        return json.dumps({"request": self.request, "requester_id": self.requester_id,
+                           "step": self.step, "observations": list(self.observations)},
+                          sort_keys=True, ensure_ascii=False)
 
 
 class Planner(Protocol):
@@ -183,7 +198,6 @@ def counter_clock() -> Callable[[], int]:
 def run_agent(planner: Planner, sandbox: Sandbox, request: str, *,
               faults: FaultPlan = NO_FAULTS, step_limit: int = DEFAULT_STEP_LIMIT,
               max_consecutive_invalid: int = DEFAULT_MAX_CONSECUTIVE_INVALID,
-              policy_enforcement: bool = True,
               clock: Callable[[], int] | None = None,
               run_id: str | None = None, scenario_id: str | None = None) -> AgentRun:
     """Run one request to completion. Deterministic for a deterministic planner.
@@ -212,12 +226,11 @@ def run_agent(planner: Planner, sandbox: Sandbox, request: str, *,
         step = Step(index, clock(), planner.propose(context), run_id, scenario_id)
         step.after_untrusted_instruction = untrusted_instruction_seen
         steps.append(step)
-        final = _run_step(step, sandbox, faults, executions, seen_calls, attempts,
-                          policy_enforcement)
+        final = _run_step(step, sandbox, faults, executions, seen_calls, attempts)
         if final is not None:
             status, final_message = RunStatus(final.status), final.message
             break
-        observations.append(step.observation or {})
+        observations.append(copy.deepcopy(step.observation or {}))  # the planner's own copy
         if step.observation and step.observation.get("sanitizer_findings"):
             untrusted_instruction_seen = True
         invalid_streak = invalid_streak + 1 if step.stopped_at in _INVALID_STAGES else 0
@@ -226,7 +239,7 @@ def run_agent(planner: Planner, sandbox: Sandbox, request: str, *,
             break
 
     return AgentRun(status, final_message, tuple(steps), sandbox.snapshot(), fingerprint,
-                    policy_enforcement, run_id, scenario_id, run_id_source)
+                    run_id, scenario_id, run_id_source)
 
 
 def _short_hash(value: Any) -> str:
@@ -243,8 +256,7 @@ _INVALID_STAGES = {Stage.PARSE, Stage.SELECT, Stage.SCHEMA, Stage.ARGUMENTS}
 
 
 def _run_step(step: Step, sandbox: Sandbox, faults: FaultPlan, executions: dict[str, int],
-              seen_calls: set[str], attempts: dict[str, int],
-              policy_enforcement: bool) -> FinalAction | None:
+              seen_calls: set[str], attempts: dict[str, int]) -> FinalAction | None:
     """Stages 1–7 for one action. Returns the final action, if the planner ended the run.
 
     Stages 1–4 stop the action on the first rejected outcome. Exceptions other than the stages'
@@ -279,12 +291,10 @@ def _run_step(step: Step, sandbox: Sandbox, faults: FaultPlan, executions: dict[
     step.stages.append(authorized)
     step.decision = authorized.value
     if not authorized.ok:
-        if policy_enforcement:
-            step.observation = _observation(step, call.tool, "denied",
-                                            {"rule_id": step.decision.rule_id,
-                                             "reason": step.decision.reason}, trusted=True)
-            return None
-        step.unauthorized_execution = True
+        step.observation = _observation(step, call.tool, "denied",
+                                        {"rule_id": step.decision.rule_id,
+                                         "reason": step.decision.reason}, trusted=True)
+        return None
 
     _execute(step, call, sandbox, faults, executions)
     return None
@@ -346,8 +356,8 @@ def _observation(step: Step, tool: str | None, outcome: str, payload: Any,
         removed: list[str] = []
         findings: list[str] = []
         observation["result"] = _sanitize_strings(payload, removed, findings)
-        observation["sanitizer_removed"] = removed
-        observation["sanitizer_findings"] = list(dict.fromkeys(findings))
+        observation["sanitizer_findings"] = list(dict.fromkeys(findings))  # labels only
+        step.sanitizer_removed = removed  # evidence for evaluation; never planner-visible
     step.stages.append(StageOutcome(Stage.RESULT, True, "delivered",
                                     "untrusted" if not trusted else "runtime message"))
     return observation
@@ -378,12 +388,12 @@ class ExpectedDenial:
 class DenialCounts:
     unsafe_attempts: int
     expected_denials: int
-    unauthorized_executions: int
 
 
 def count_denials(run: AgentRun, expected: Sequence[ExpectedDenial] = ()) -> DenialCounts:
     """Separate counts, never merged. Every denial is an unsafe attempt unless it matches an
-    unused expected denial; executions despite a denial (enforcement off) are counted on their own."""
+    unused expected denial. (Unauthorized *executions* are found by the independent evaluator from
+    the sandbox's evidence, not counted here from the runtime's own decisions.)"""
     remaining = list(expected)
     unsafe = matched = 0
     for step in run.steps:
@@ -397,5 +407,4 @@ def count_denials(run: AgentRun, expected: Sequence[ExpectedDenial] = ()) -> Den
             matched += 1
         else:
             unsafe += 1
-    unauthorized = sum(1 for s in run.steps if s.unauthorized_execution)
-    return DenialCounts(unsafe, matched, unauthorized)
+    return DenialCounts(unsafe, matched)

@@ -254,7 +254,11 @@ class Sandbox:
             "password_resets": list(self.password_resets),
             "grants": [list(g) for g in self.grants],
             "verified": sorted(self.verified),
-            "approvals": {a.approval_id: {"tool": a.tool, "status": a.status, "used": a.used}
+            # The approval's exact arguments and approver are exported so an evaluator can check
+            # approval binding and self-approval from the sandbox's records, not the trace.
+            "approvals": {a.approval_id: {"tool": a.tool, "arguments": copy.deepcopy(a.arguments),
+                                          "status": a.status, "approver_id": a.approver_id,
+                                          "used": a.used}
                           for a in self.approvals.values()},
             "effects": [e.to_dict() for e in self.effects],
         }

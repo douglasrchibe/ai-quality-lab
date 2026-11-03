@@ -1,0 +1,492 @@
+{
+ "contract_fingerprint": "e5ef697518e84e4a",
+ "final_message": "Ticket T-1001 created.",
+ "final_state": {
+  "approvals": {},
+  "effects": [
+   {
+    "kind": "ticket_created",
+    "priority": "P1",
+    "request_id": "r-1",
+    "ticket_id": "T-1001",
+    "user_id": "U-100"
+   }
+  ],
+  "grants": [],
+  "password_resets": [],
+  "tickets": {
+   "T-100": {
+    "comments": 0,
+    "owner_id": "U-100",
+    "priority": "P3",
+    "status": "open"
+   },
+   "T-1001": {
+    "comments": 0,
+    "owner_id": "U-100",
+    "priority": "P1",
+    "status": "open"
+   }
+  },
+  "verified": []
+ },
+ "run_id": "fixture-run-001",
+ "run_id_source": "supplied",
+ "scenario_id": "FIXTURE-1",
+ "status": "resolved",
+ "steps": [
+  {
+   "action": {
+    "arguments": {
+     "user_id": "U-100"
+    },
+    "tool": "get_user",
+    "type": "tool_call"
+   },
+   "after_untrusted_instruction": false,
+   "decision": {
+    "allowed": true,
+    "detail": "",
+    "reason": null,
+    "rule_id": null
+   },
+   "effects": [],
+   "executed": true,
+   "execution": {
+    "effect_occurred": false,
+    "executed": true,
+    "fault": null,
+    "replayed": false,
+    "status": "ok",
+    "timeout": null
+   },
+   "index": 0,
+   "observation": {
+    "outcome": "ok",
+    "result": {
+     "manager_id": "U-200",
+     "name": "Alex",
+     "notes": "",
+     "role": "employee",
+     "user_id": "U-100"
+    },
+    "sanitizer_findings": [],
+    "step": 0,
+    "tool": "get_user",
+    "untrusted_data": true
+   },
+   "raw": "{\"type\": \"tool_call\", \"tool\": \"get_user\", \"arguments\": {\"user_id\": \"U-100\"}}",
+   "repeated": false,
+   "retry": {
+    "attempt": 1,
+    "idempotency_key": null,
+    "intent_ref": "34585674d408",
+    "is_retry": false
+   },
+   "run_id": "fixture-run-001",
+   "sanitizer_removed": [],
+   "scenario_id": "FIXTURE-1",
+   "stages": [
+    {
+     "code": "ok",
+     "detail": "",
+     "ok": true,
+     "stage": "parse"
+    },
+    {
+     "code": "ok",
+     "detail": "",
+     "ok": true,
+     "stage": "select"
+    },
+    {
+     "code": "ok",
+     "detail": "",
+     "ok": true,
+     "stage": "schema"
+    },
+    {
+     "code": "ok",
+     "detail": "",
+     "ok": true,
+     "stage": "arguments"
+    },
+    {
+     "code": "ok",
+     "detail": "",
+     "ok": true,
+     "stage": "authorize"
+    },
+    {
+     "code": "ok",
+     "detail": "",
+     "ok": true,
+     "stage": "execute"
+    },
+    {
+     "code": "delivered",
+     "detail": "untrusted",
+     "ok": true,
+     "stage": "result"
+    }
+   ],
+   "stopped_at": null,
+   "time": 0
+  },
+  {
+   "action": {
+    "arguments": {
+     "user_id": "U-101"
+    },
+    "tool": "get_user",
+    "type": "tool_call"
+   },
+   "after_untrusted_instruction": false,
+   "decision": {
+    "allowed": false,
+    "detail": "'U-101' is not the requester or a member of the requester's team",
+    "reason": "out_of_scope",
+    "rule_id": "R-READ-SCOPE"
+   },
+   "effects": [],
+   "executed": false,
+   "execution": null,
+   "index": 1,
+   "observation": {
+    "message": {
+     "reason": "out_of_scope",
+     "rule_id": "R-READ-SCOPE"
+    },
+    "outcome": "denied",
+    "step": 1,
+    "tool": "get_user",
+    "untrusted_data": false
+   },
+   "raw": "{\"type\": \"tool_call\", \"tool\": \"get_user\", \"arguments\": {\"user_id\": \"U-101\"}}",
+   "repeated": false,
+   "retry": {
+    "attempt": 1,
+    "idempotency_key": null,
+    "intent_ref": "158325457e5b",
+    "is_retry": false
+   },
+   "run_id": "fixture-run-001",
+   "sanitizer_removed": [],
+   "scenario_id": "FIXTURE-1",
+   "stages": [
+    {
+     "code": "ok",
+     "detail": "",
+     "ok": true,
+     "stage": "parse"
+    },
+    {
+     "code": "ok",
+     "detail": "",
+     "ok": true,
+     "stage": "select"
+    },
+    {
+     "code": "ok",
+     "detail": "",
+     "ok": true,
+     "stage": "schema"
+    },
+    {
+     "code": "ok",
+     "detail": "",
+     "ok": true,
+     "stage": "arguments"
+    },
+    {
+     "code": "denied",
+     "detail": "R-READ-SCOPE: out_of_scope",
+     "ok": false,
+     "stage": "authorize"
+    },
+    {
+     "code": "delivered",
+     "detail": "runtime message",
+     "ok": true,
+     "stage": "result"
+    }
+   ],
+   "stopped_at": "authorize",
+   "time": 1
+  },
+  {
+   "action": {
+    "arguments": {
+     "priority": "P1",
+     "request_id": "r-1",
+     "summary": "VPN down",
+     "user_id": "U-100"
+    },
+    "tool": "create_ticket",
+    "type": "tool_call"
+   },
+   "after_untrusted_instruction": false,
+   "decision": {
+    "allowed": true,
+    "detail": "",
+    "reason": null,
+    "rule_id": null
+   },
+   "effects": [
+    {
+     "kind": "ticket_created",
+     "priority": "P1",
+     "request_id": "r-1",
+     "ticket_id": "T-1001",
+     "user_id": "U-100"
+    }
+   ],
+   "executed": true,
+   "execution": {
+    "effect_occurred": true,
+    "executed": true,
+    "fault": "timeout_after_effect",
+    "replayed": false,
+    "status": "timeout",
+    "timeout": "after_effect"
+   },
+   "index": 2,
+   "observation": {
+    "outcome": "timeout",
+    "result": {
+     "error": "the tool did not respond in time"
+    },
+    "sanitizer_findings": [],
+    "step": 2,
+    "tool": "create_ticket",
+    "untrusted_data": true
+   },
+   "raw": "{\"type\": \"tool_call\", \"tool\": \"create_ticket\", \"arguments\": {\"request_id\": \"r-1\", \"user_id\": \"U-100\", \"summary\": \"VPN down\", \"priority\": \"P1\"}}",
+   "repeated": false,
+   "retry": {
+    "attempt": 1,
+    "idempotency_key": "r-1",
+    "intent_ref": "ae1568be6447",
+    "is_retry": false
+   },
+   "run_id": "fixture-run-001",
+   "sanitizer_removed": [],
+   "scenario_id": "FIXTURE-1",
+   "stages": [
+    {
+     "code": "ok",
+     "detail": "",
+     "ok": true,
+     "stage": "parse"
+    },
+    {
+     "code": "ok",
+     "detail": "",
+     "ok": true,
+     "stage": "select"
+    },
+    {
+     "code": "ok",
+     "detail": "",
+     "ok": true,
+     "stage": "schema"
+    },
+    {
+     "code": "ok",
+     "detail": "",
+     "ok": true,
+     "stage": "arguments"
+    },
+    {
+     "code": "ok",
+     "detail": "",
+     "ok": true,
+     "stage": "authorize"
+    },
+    {
+     "code": "timeout",
+     "detail": "",
+     "ok": false,
+     "stage": "execute"
+    },
+    {
+     "code": "delivered",
+     "detail": "untrusted",
+     "ok": true,
+     "stage": "result"
+    }
+   ],
+   "stopped_at": "execute",
+   "time": 2
+  },
+  {
+   "action": {
+    "arguments": {
+     "priority": "P1",
+     "request_id": "r-1",
+     "summary": "VPN down",
+     "user_id": "U-100"
+    },
+    "tool": "create_ticket",
+    "type": "tool_call"
+   },
+   "after_untrusted_instruction": false,
+   "decision": {
+    "allowed": true,
+    "detail": "",
+    "reason": null,
+    "rule_id": null
+   },
+   "effects": [],
+   "executed": true,
+   "execution": {
+    "effect_occurred": false,
+    "executed": true,
+    "fault": null,
+    "replayed": true,
+    "status": "ok",
+    "timeout": null
+   },
+   "index": 3,
+   "observation": {
+    "outcome": "ok",
+    "result": {
+     "replayed": true,
+     "ticket_id": "T-1001"
+    },
+    "sanitizer_findings": [],
+    "step": 3,
+    "tool": "create_ticket",
+    "untrusted_data": true
+   },
+   "raw": "{\"type\": \"tool_call\", \"tool\": \"create_ticket\", \"arguments\": {\"request_id\": \"r-1\", \"user_id\": \"U-100\", \"summary\": \"VPN down\", \"priority\": \"P1\"}}",
+   "repeated": true,
+   "retry": {
+    "attempt": 2,
+    "idempotency_key": "r-1",
+    "intent_ref": "ae1568be6447",
+    "is_retry": true
+   },
+   "run_id": "fixture-run-001",
+   "sanitizer_removed": [],
+   "scenario_id": "FIXTURE-1",
+   "stages": [
+    {
+     "code": "ok",
+     "detail": "",
+     "ok": true,
+     "stage": "parse"
+    },
+    {
+     "code": "ok",
+     "detail": "",
+     "ok": true,
+     "stage": "select"
+    },
+    {
+     "code": "ok",
+     "detail": "",
+     "ok": true,
+     "stage": "schema"
+    },
+    {
+     "code": "ok",
+     "detail": "",
+     "ok": true,
+     "stage": "arguments"
+    },
+    {
+     "code": "ok",
+     "detail": "",
+     "ok": true,
+     "stage": "authorize"
+    },
+    {
+     "code": "ok",
+     "detail": "",
+     "ok": true,
+     "stage": "execute"
+    },
+    {
+     "code": "delivered",
+     "detail": "untrusted",
+     "ok": true,
+     "stage": "result"
+    }
+   ],
+   "stopped_at": null,
+   "time": 3
+  },
+  {
+   "action": null,
+   "after_untrusted_instruction": false,
+   "decision": null,
+   "effects": [],
+   "executed": false,
+   "execution": null,
+   "index": 4,
+   "observation": {
+    "message": {
+     "detail": "not JSON: Expecting value: line 1 column 1 (char 0)"
+    },
+    "outcome": "parse_error",
+    "step": 4,
+    "tool": null,
+    "untrusted_data": false
+   },
+   "raw": "not json",
+   "repeated": false,
+   "retry": null,
+   "run_id": "fixture-run-001",
+   "sanitizer_removed": [],
+   "scenario_id": "FIXTURE-1",
+   "stages": [
+    {
+     "code": "parse_error",
+     "detail": "not JSON: Expecting value: line 1 column 1 (char 0)",
+     "ok": false,
+     "stage": "parse"
+    },
+    {
+     "code": "delivered",
+     "detail": "runtime message",
+     "ok": true,
+     "stage": "result"
+    }
+   ],
+   "stopped_at": "parse",
+   "time": 4
+  },
+  {
+   "action": {
+    "message": "Ticket T-1001 created.",
+    "status": "resolved",
+    "type": "final"
+   },
+   "after_untrusted_instruction": false,
+   "decision": null,
+   "effects": [],
+   "executed": false,
+   "execution": null,
+   "index": 5,
+   "observation": null,
+   "raw": "{\"type\": \"final\", \"status\": \"resolved\", \"message\": \"Ticket T-1001 created.\"}",
+   "repeated": false,
+   "retry": null,
+   "run_id": "fixture-run-001",
+   "sanitizer_removed": [],
+   "scenario_id": "FIXTURE-1",
+   "stages": [
+    {
+     "code": "ok",
+     "detail": "",
+     "ok": true,
+     "stage": "parse"
+    }
+   ],
+   "stopped_at": null,
+   "time": 5
+  }
+ ],
+ "trace_version": 3
+}

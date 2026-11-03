@@ -97,6 +97,24 @@ def test_consequential_tools_consume_their_approval_and_log_an_effect(agent_sand
         {"kind": "password_reset", "user_id": "U-100", "approval_id": "APR-1"}]
 
 
+def test_the_snapshot_exports_each_approvals_arguments_and_approver(agent_sandbox):
+    sandbox = agent_sandbox(approval_script=[ApprovalResponse("approved", "U-200")])
+    sandbox.execute("request_approval", {"tool": "reset_password",
+                                         "arguments": {"user_id": "U-100"}, "justification": "x"})
+    sandbox.execute("request_approval", {"tool": "grant_access",
+                                         "arguments": {"user_id": "U-100", "resource": "crm-read"},
+                                         "justification": "x"})
+    approvals = sandbox.snapshot()["approvals"]
+    assert approvals == {
+        "APR-1": {"tool": "reset_password", "arguments": {"user_id": "U-100"},
+                  "status": "approved", "approver_id": "U-200", "used": False},
+        "APR-2": {"tool": "grant_access", "arguments": {"user_id": "U-100", "resource": "crm-read"},
+                  "status": "pending", "approver_id": None, "used": False},
+    }
+    approvals["APR-1"]["arguments"]["user_id"] = "changed"  # an export, not a live reference
+    assert sandbox.approvals["APR-1"].arguments == {"user_id": "U-100"}
+
+
 def test_the_snapshot_is_json_ready_and_deterministic(agent_sandbox):
     def build():
         sandbox = agent_sandbox()
