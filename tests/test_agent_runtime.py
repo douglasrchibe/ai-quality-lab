@@ -139,8 +139,7 @@ def test_unsafe_attempts_and_expected_denials_are_counted_separately(agent_sandb
     assert count_denials(run) == (counts := count_denials(run, ()))
     assert (counts.unsafe_attempts, counts.expected_denials) == (2, 0)
     with_expected = count_denials(run, [probe])
-    assert (with_expected.unsafe_attempts, with_expected.expected_denials,
-            with_expected.unauthorized_executions) == (1, 1, 0)
+    assert (with_expected.unsafe_attempts, with_expected.expected_denials) == (1, 1)
     # One expected entry excuses one denial only.
     twice = run_agent(replay([call("get_ticket", ticket_id="T-300")] * 2),
                       agent_sandbox(requester_id="U-200"), "x")
@@ -162,18 +161,26 @@ def test_faults_without_effect_are_reported_and_change_nothing(agent_sandbox, re
     assert step.observation["untrusted_data"] is True
 
 
-def test_with_enforcement_off_a_denied_action_executes_and_is_marked(agent_sandbox, replay, call):
-    actions = [call("reset_password", user_id="U-100", approval_id="APR-1")]
-    enforced = run_agent(replay(actions), agent_sandbox(), "x")
-    unenforced = run_agent(replay(actions), agent_sandbox(), "x", policy_enforcement=False)
-    assert enforced.final_state["password_resets"] == []
-    assert unenforced.final_state["password_resets"] == ["U-100"]
-    step = unenforced.steps[0]
-    assert step.decision.rule_id == "R-VERIFIED" and step.executed and step.unauthorized_execution
-    assert stages(step)[4] == ("authorize", "denied")  # the decision is still recorded
-    counts = count_denials(unenforced)
-    assert (counts.unsafe_attempts, counts.unauthorized_executions) == (1, 1)
-    assert unenforced.policy_enforcement is False and enforced.policy_enforcement is True
+def test_a_denied_action_never_executes(agent_sandbox, replay, call):
+    run = run_agent(replay([call("reset_password", user_id="U-100", approval_id="APR-1")]),
+                    agent_sandbox(), "x")
+    step = run.steps[0]
+    assert step.decision.rule_id == "R-VERIFIED" and stages(step)[4] == ("authorize", "denied")
+    assert not step.executed and step.execution is None
+    assert run.final_state["password_resets"] == [] and run.final_state["effects"] == []
+
+
+def test_with_a_broken_policy_the_runtime_executes_and_its_trace_hides_it(
+        agent_sandbox, replay, call, broken_authorization):
+    """Why an independent evaluator is needed: a broken stage 5 (test-only substitution) lets an
+    unverified, unapproved reset execute, and the runtime's own trace reports nothing wrong."""
+    run = run_agent(replay([call("reset_password", user_id="U-100", approval_id="APR-1")]),
+                    agent_sandbox(), "x")
+    step = run.steps[0]
+    assert stages(step)[4] == ("authorize", "ok") and step.decision.allowed
+    assert step.executed and run.final_state["password_resets"] == ["U-100"]
+    assert count_denials(run) == DenialCounts(0, 0)  # the runtime sees no problem at all
+    assert [d.rule_id for d in broken_authorization] == ["R-VERIFIED"]  # what policy would say
 
 
 def test_a_full_password_reset_workflow(agent_sandbox, replay, call):
@@ -190,7 +197,7 @@ def test_a_full_password_reset_workflow(agent_sandbox, replay, call):
     assert run.status is RunStatus.RESOLVED
     assert [e["kind"] for e in run.final_state["effects"]] == [
         "identity_verified", "approval_requested", "password_reset", "comment_added"]
-    assert count_denials(run) == DenialCounts(0, 0, 0)
+    assert count_denials(run) == DenialCounts(0, 0)
 
 
 # --- AC5: determinism and the I/O boundary -------------------------------------------------------
@@ -262,11 +269,10 @@ def test_the_agent_package_imports_nothing_that_can_reach_the_network_or_filesys
 
 # --- Follow-up: run and scenario IDs ------------------------------------------------------------
 
-V1_RUN_KEYS = {"status", "final_message", "contract_fingerprint", "policy_enforcement", "steps",
-               "final_state"}
+# Version-1 fields minus the two that version 3 removed (policy_enforcement, unauthorized_execution).
+V1_RUN_KEYS = {"status", "final_message", "contract_fingerprint", "steps", "final_state"}
 V1_STEP_KEYS = {"index", "time", "raw", "action", "stages", "stopped_at", "decision", "executed",
-                "unauthorized_execution", "effects", "observation", "repeated",
-                "after_untrusted_instruction"}
+                "effects", "observation", "repeated", "after_untrusted_instruction"}
 
 
 def test_supplied_ids_are_on_the_run_and_every_step_and_serialized(agent_sandbox, replay, call):
@@ -299,9 +305,11 @@ def test_malformed_ids_are_refused(agent_sandbox, replay, field, value):
         run_agent(replay([]), agent_sandbox(), "x", **{field: value})
 
 
-def test_trace_version_2_keeps_every_version_1_field(agent_sandbox, replay, call):
+def test_trace_version_3_keeps_every_other_earlier_field(agent_sandbox, replay, call):
     data = run_agent(replay([call("get_user", user_id="U-100")]), agent_sandbox(), "x").to_dict()
-    assert data["trace_version"] == 2
+    assert data["trace_version"] == 3
+    assert "policy_enforcement" not in data
+    assert all("unauthorized_execution" not in s for s in data["steps"])
     assert V1_RUN_KEYS <= set(data) and all(V1_STEP_KEYS <= set(s) for s in data["steps"])
     assert set(data) - V1_RUN_KEYS == {"trace_version", "run_id", "scenario_id", "run_id_source"}
     assert set(data["steps"][0]) - V1_STEP_KEYS == {"run_id", "scenario_id", "retry", "execution"}
@@ -421,3 +429,69 @@ def test_a_programming_error_in_a_stage_propagates_out_of_the_run(agent_sandbox,
     monkeypatch.setattr(sandbox, "arguments_stage", broken)
     with pytest.raises(RuntimeError, match="bug in stage 4"):
         run_agent(replay([call("get_user", user_id="U-100")]), sandbox, "x")
+
+
+# --- No production way to disable authorization (Phase 11.2, step 1) ----------------------------
+
+SRC = Path(__file__).resolve().parents[1] / "src" / "ai_quality_lab"
+BYPASS_WORDS = ("enforce", "bypass", "no_policy", "no-policy", "disable_auth", "skip_auth",
+                "allow_all", "unsafe")
+
+
+def test_run_agent_has_no_parameter_that_could_disable_authorization():
+    import inspect
+
+    params = inspect.signature(run_agent).parameters
+    assert set(params) == {"planner", "sandbox", "request", "faults", "step_limit",
+                           "max_consecutive_invalid", "clock", "run_id", "scenario_id"}
+
+
+def test_no_production_code_or_cli_offers_a_policy_switch():
+    """Scans every module in src/: no function parameter or CLI option named like a policy switch,
+    and the removed v1/v2 field name appears only in the trace-format module (as a legacy key)."""
+    offenders = []
+    for path in sorted(SRC.rglob("*.py")):
+        text = path.read_text(encoding="utf-8")
+        if "policy_enforcement" in text and path.name != "trace_format.py":
+            offenders.append(f"{path.name}: mentions policy_enforcement")
+        for node in ast.walk(ast.parse(text)):
+            names = []
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                args = node.args
+                names = [a.arg for a in args.args + args.kwonlyargs + args.posonlyargs]
+            elif (isinstance(node, ast.Call) and getattr(node.func, "attr", "") == "add_argument"):
+                names = [a.value for a in node.args if isinstance(a, ast.Constant)
+                         and isinstance(a.value, str)]
+            offenders += [f"{path.name}: {n}" for n in names
+                          if any(w in n.lower() for w in BYPASS_WORDS)
+                          and (path.parent.name in ("agent", "agent_eval") or "polic" in n.lower()
+                               or "auth" in n.lower())]
+    assert offenders == []
+
+
+def test_the_broken_authorization_substitute_exists_only_in_tests():
+    assert all("broken_authorization" not in p.read_text(encoding="utf-8")
+               for p in SRC.rglob("*.py"))
+    conftest = Path(__file__).resolve().parent / "conftest.py"
+    assert "def broken_authorization(monkeypatch)" in conftest.read_text(encoding="utf-8")
+
+
+def test_every_executed_step_passed_authorization(agent_sandbox, replay, call):
+    """Normal behaviour: across allowed, denied, rejected and faulted actions, nothing executes
+    without an "authorize: ok" outcome."""
+    sandbox = agent_sandbox(verification_script={"U-100": True},
+                            approval_script=[ApprovalResponse("approved", "U-200")])
+    run = run_agent(replay([
+        call("get_user", user_id="U-101"), call("reset_password", user_id="U-100", approval_id="APR-1"),
+        call("verify_identity", user_id="U-100", method="callback"),
+        call("request_approval", tool="reset_password", arguments={"user_id": "U-100"},
+             justification="x"),
+        call("reset_password", user_id="U-100", approval_id="APR-1"),
+        call("reset_password", user_id="U-100", approval_id="APR-1"),
+        call("grant_access", user_id="U-100", resource="domain-admin", approval_id="APR-1"),
+        call("create_ticket", **TICKET)]), sandbox, "x", step_limit=10)
+    for step in run.steps:
+        if step.executed:
+            assert ("authorize", "ok") in stages(step), step.index
+    assert [s.index for s in run.steps if s.denied] == [0, 1, 5, 6]
+    assert run.final_state["password_resets"] == ["U-100"] and run.final_state["grants"] == []

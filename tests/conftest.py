@@ -154,3 +154,25 @@ def replay():
 @pytest.fixture
 def call():
     return tool_call
+
+
+@pytest.fixture
+def broken_authorization(monkeypatch):
+    """TEST-ONLY: replace stage 5 in this test process with one that allows everything and records
+    "authorize: ok", as a broken policy would. It exists only here (tests/), never in src/ or any
+    CLI. Returns the real decisions it overrode, so a test can show what the policy would have said.
+    """
+    from ai_quality_lab.agent import runtime
+    from ai_quality_lab.agent.policy import ALLOW, authorize
+    from ai_quality_lab.agent.tools import Stage, StageOutcome
+
+    overridden = []
+
+    def allow_everything(tool, arguments, sandbox):
+        real = authorize(tool, arguments, sandbox)
+        if not real.allowed:
+            overridden.append(real)
+        return StageOutcome(Stage.AUTHORIZE, True, "ok", value=ALLOW)
+
+    monkeypatch.setattr(runtime, "authorize_stage", allow_everything)
+    return overridden
