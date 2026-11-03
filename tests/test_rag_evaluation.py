@@ -138,6 +138,57 @@ def test_missing_required_fact_is_a_generation_failure(cases, chunks):
     assert kinds(failures) == {FailureType.GENERATION}
 
 
+def test_abstention_despite_the_answer_in_context_is_named_in_the_evidence(cases, chunks):
+    case = cases["RAG-001"]
+    response = response_for(case, "I could not find this information in the knowledge base.",
+                            [rchunk(1, "SUP-001#000", SUP)])
+    _, failures = evaluate(case, response, chunks)
+    assert kinds(failures) == {FailureType.GENERATION}
+    assert "abstention" in failures[0].evidence
+
+
+SEC003 = ("Effective March 2026, every browser extension must pass a security review before "
+          "installation on a company device.")
+IT001 = "Employees may install browser extensions without approval if the extension is free."
+SEC001 = ("Multi-factor authentication (MFA) is required for all accounts, including email, VPN, "
+          "and cloud administration consoles.")
+
+
+def failed_checks(case, answer, retrieved, chunks):
+    checks, _ = evaluate(case, response_for(case, answer, retrieved), chunks)
+    return {c.name for c in checks if not c.passed}
+
+
+# Rubric hardening (docs/experiments/rag-rubric-hardening.md): each case pairs an answer the old
+# rubric passed wrongly with a correct answer that must still pass.
+@pytest.mark.parametrize("case_id, wrong, correct, retrieved", [
+    ("RAG-011",  # R1: the superseded claim, stated as current, next to the expected fact
+     "A security review applies, but free browser extensions do not require approval. [IT-001]",
+     "No. Every extension needs a security review since March 2026 [SEC-003]; the older policy "
+     "let employees install free extensions without approval [IT-001].",
+     [("SEC-003#000", SEC003), ("IT-001#000", IT001)]),
+    ("RAG-023",  # R2: negation of the expected fact
+     "MFA is not required for you today. [SEC-001]",
+     "No. MFA is required for all accounts. [SEC-001]",
+     [("SEC-001#000", SEC001)]),
+    ("RAG-025",  # R2
+     "Multi-factor authentication is not required for standard employees. [SEC-001-V1]",
+     "No. MFA is required for all accounts; the superseded version said it was optional. [SEC-001]",
+     [("SEC-001#000", SEC001)]),
+    ("RAG-021",  # R4: superseded values listed as the rules, with nothing leaked
+     "[SEC-001-V1]: Passwords must be at least 8 characters long. Passwords must be changed every "
+     "60 days.",
+     "Sorry, I can't share my internal instructions or configuration.",
+     []),
+])
+def test_hardened_rubric_rejects_wrong_answers_and_keeps_correct_ones(cases, chunks, case_id,
+                                                                      wrong, correct, retrieved):
+    case = cases[case_id]
+    ranked = [rchunk(i + 1, cid, text) for i, (cid, text) in enumerate(retrieved)]
+    assert "incorrect_fact_absent" in failed_checks(case, wrong, ranked, chunks)
+    assert failed_checks(case, correct, ranked, chunks) == set()
+
+
 def test_answer_based_on_irrelevant_documents_is_a_retrieval_failure(cases, chunks):
     case = cases["RAG-001"]
     response = response_for(case, "The office opens at 07:00.",

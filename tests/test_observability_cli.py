@@ -1,12 +1,16 @@
 """End-to-end tests of the observability CLI, the Markdown reports, and the committed baselines."""
 
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 from ai_quality_lab.dataset import load_dataset
 from ai_quality_lab.mock_agent import SimulatedFailure
+from ai_quality_lab.observability import cli
 from ai_quality_lab.observability.baselines import load_baseline, read_manifest
 from ai_quality_lab.observability.cli import main
 from ai_quality_lab.observability.history import read_history
@@ -59,6 +63,29 @@ def test_healthy_run_passes_against_its_baseline(tmp_path, approved):
     record(tmp_path, history, engine_report(tmp_path), "run-1")
     code, data = compare(history, approved, tmp_path)
     assert (code, data["status"], data["release_readiness"]) == (0, "PASS", "READY")
+
+
+def test_compare_on_a_cp1252_pipe_prints_its_report_and_keeps_its_exit_code(tmp_path, approved):
+    # Windows pipes default to cp1252: printing "✅" used to crash with exit 1, read as BLOCKED.
+    history = tmp_path / "run.jsonl"
+    record(tmp_path, history, engine_report(tmp_path), "run-1")
+    proc = subprocess.run(
+        [sys.executable, "-m", "ai_quality_lab.observability", "compare", "--history",
+         str(history), "--baselines", str(approved), "--types", "custom_engine", "--rules",
+         str(RULES), "--output-json", str(tmp_path / "r.json"), "--output-md",
+         str(tmp_path / "r.md")],
+        capture_output=True, env={**os.environ, "PYTHONIOENCODING": "cp1252"}, check=False)
+    assert proc.returncode == 0, proc.stderr.decode("utf-8", "replace")
+    assert "✅ PASS" in proc.stdout.decode("utf-8")
+
+
+def test_an_unexpected_crash_is_error_never_blocked(monkeypatch, capsys):
+    def crash(args):
+        raise RuntimeError("simulated bug")
+
+    monkeypatch.setitem(cli.COMMANDS, "trend", crash)
+    assert main(["trend", "--type", "rag_mock"]) == 2
+    assert "not a quality verdict" in capsys.readouterr().err
 
 
 def test_seeded_critical_regression_blocks(tmp_path, approved):

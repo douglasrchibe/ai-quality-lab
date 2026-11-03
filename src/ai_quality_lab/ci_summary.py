@@ -25,6 +25,8 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from ai_quality_lab.console import unexpected_error, use_utf8_output
+
 ALLOWED_SKIP_MODULES = ("tests.test_llm_live", "tests.test_rag_live")
 """Only opt-in live-model tests may be skipped in CI; any other skip means lost coverage."""
 KNOWN_DEFECTS = Path("ci") / "known_defects.json"
@@ -282,6 +284,14 @@ def build_summary(root: Path, job_results: Mapping[str, str],
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    use_utf8_output()
+    try:
+        return _run(argv)
+    except Exception:  # noqa: BLE001 - a crash must be ERROR, not exit 1 (BLOCKED)
+        return unexpected_error("ci_summary")
+
+
+def _run(argv: Sequence[str] | None) -> int:
     parser = argparse.ArgumentParser(prog="python -m ai_quality_lab.ci_summary")
     sub = parser.add_subparsers(dest="command", required=True)
     skips = sub.add_parser("skips", help="fail if pytest skipped anything except live tests")

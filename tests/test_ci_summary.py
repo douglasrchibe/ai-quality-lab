@@ -1,10 +1,14 @@
 """Tests for the CI skip audit, job summary, and quality gate."""
 
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
+from ai_quality_lab import ci_summary
 from ai_quality_lab.ci_summary import (
     NeedsError,
     audit_skips,
@@ -246,3 +250,24 @@ def test_summary_without_regression_report_says_unavailable(artifacts):
                          ROOT / "ci" / "known_defects.json")
     assert "**Regression vs baseline:** report unavailable" in text
     assert "D-6.4" in text  # every open known defect is listed, including ones without cases
+
+
+def test_summary_on_a_cp1252_pipe_prints_and_exits_zero(tmp_path):
+    # Windows pipes default to cp1252: printing the status symbol used to crash with exit 1.
+    proc = subprocess.run(
+        [sys.executable, "-m", "ai_quality_lab.ci_summary", "summary", "--artifacts",
+         str(tmp_path), "--needs-json", "{}", "--output", str(tmp_path / "summary.md")],
+        capture_output=True, env={**os.environ, "PYTHONIOENCODING": "cp1252"}, check=False)
+    assert proc.returncode == 0, proc.stderr.decode("utf-8", "replace")
+    assert "⚠️ ERROR" in proc.stdout.decode("utf-8")
+
+
+def test_an_unexpected_crash_is_error_never_blocked(tmp_path, monkeypatch, capsys):
+    def crash(*args, **kwargs):
+        raise RuntimeError("simulated bug")
+
+    monkeypatch.setattr(ci_summary, "overall_outcome", crash)
+    code = ci_summary.main(["gate", "--artifacts", str(tmp_path), "--needs-json",
+                            json.dumps({"python-tests": {"result": "success"}})])
+    assert code == 2
+    assert "not a quality verdict" in capsys.readouterr().err

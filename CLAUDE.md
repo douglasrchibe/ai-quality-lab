@@ -51,6 +51,7 @@ quality gates. This is a learning/portfolio project for AI-evaluation QA automat
 | `src/ai_quality_lab/rag/` | Phase 6 RAG: documents, chunking, embeddings, vector_store, index, retrieval, security, prompting, chatbot, mock_llm, dataset, retrieval_metrics, failures, evaluate, ragas_eval |
 | `data/knowledge_base/` | 16 synthetic documents (MAL-* adversarial, RES-001 restricted) |
 | `evals/rag_cases.json` | RAG ground truth (reference context, relevant doc IDs, facts) |
+| `src/ai_quality_lab/console.py` | UTF-8 console output and crash-is-ERROR (exit 2) handling for the PASS/BLOCKED/ERROR CLIs |
 | `src/ai_quality_lab/ci_check.py` / `ci_summary.py` | CI check wrapper (exit code -> PASS/BLOCKED/ERROR) and skip audit, job summary, final gate |
 | `.github/workflows/` | `ci.yml` (deterministic quality gates), `ragas-environment.yml` (path-filtered) |
 | `constraints/` | CI lock files (primary and Ragas environments), generated from CI `pip freeze` |
@@ -58,6 +59,7 @@ quality gates. This is a learning/portfolio project for AI-evaluation QA automat
 | `src/ai_quality_lab/reporting.py` | Markdown quality reports (CI job summary, artifacts, local report) |
 | `src/ai_quality_lab/observability/` | Phase 8: records, history (JSONL), regression rules/detection, baselines, CLI. Phase 9: `calibration`, `live_batch`, `synthetic` |
 | `docs/live-calibration.md` | Phase 9 live calibration method, operation, owner approval of live baselines |
+| `docs/experiments/` | Pre-registered live experiments (protocol, decision rules, results), rubric change records |
 | `ci/regression_rules.json` | Regression directions, tolerances, actions |
 | `reports/baselines/` | Approved baselines (committed): manifest, audit log, immutable records |
 | `docs/quality-observability.md` | Phase 8 data model, metrics, rules, baseline approval, limitations |
