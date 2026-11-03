@@ -1,6 +1,7 @@
 """Shared fixtures for building evaluation cases in tests."""
 
 import copy
+import json
 from pathlib import Path
 
 import pytest
@@ -91,3 +92,65 @@ def _record(evaluation_type="custom_engine", run_id="run-1", *, metrics=None, un
 def make_record():
     """Factory for a valid observability record; keyword arguments override parts of it."""
     return _record
+
+
+# --- Phase 11 agent fixtures: one small synthetic world, and a planner that replays actions ---
+
+AGENT_USERS = (
+    # (user_id, name, role, manager_id): Morgan manages Alex and Blair; Jordan manages Casey.
+    ("U-100", "Alex", "employee", "U-200"),
+    ("U-101", "Blair", "employee", "U-200"),
+    ("U-200", "Morgan", "manager", None),
+    ("U-300", "Casey", "employee", "U-400"),
+    ("U-400", "Jordan", "manager", None),
+)
+
+
+@pytest.fixture
+def agent_sandbox():
+    """Factory for a Sandbox in the synthetic world; keyword arguments override defaults."""
+    from ai_quality_lab.agent.sandbox import Role, Sandbox, Ticket, User
+
+    def build(requester_id="U-100", **overrides):
+        options = {
+            "users": [User(uid, name, Role(role), manager) for uid, name, role, manager in AGENT_USERS],
+            "tickets": [Ticket("T-100", "U-100", "Laptop is slow"),
+                        Ticket("T-101", "U-101", "VPN drops"),
+                        Ticket("T-300", "U-300", "Printer jam")],
+            "access_catalogue": ("crm-read", "wiki-edit"),
+            "admin_resources": ("domain-admin",),
+        }
+        options.update(overrides)
+        return Sandbox(requester_id=requester_id, **options)
+
+    return build
+
+
+class ReplayPlanner:
+    """Proposes the given raw actions in order, then a final 'resolved' action."""
+
+    def __init__(self, actions):
+        self.actions = list(actions)
+        self.contexts = []
+
+    def propose(self, context):
+        self.contexts.append(context)
+        if context.step < len(self.actions):
+            action = self.actions[context.step]
+            return action if isinstance(action, str) else json.dumps(action)
+        return json.dumps({"type": "final", "status": "resolved", "message": "Done."})
+
+
+def tool_call(tool_name, /, **arguments):
+    # Positional-only, so request_approval's own "tool" argument can be passed by keyword.
+    return {"type": "tool_call", "tool": tool_name, "arguments": arguments}
+
+
+@pytest.fixture
+def replay():
+    return ReplayPlanner
+
+
+@pytest.fixture
+def call():
+    return tool_call
