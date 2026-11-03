@@ -28,6 +28,7 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
+from ai_quality_lab.console import unexpected_error, use_utf8_output
 from ai_quality_lab.observability.baselines import (
     DEFAULT_BASELINES,
     BaselineError,
@@ -351,6 +352,7 @@ COMMANDS = {"record": cmd_record, "compare": cmd_compare, "trend": cmd_trend,
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    use_utf8_output()
     args = build_parser().parse_args(argv)
     try:
         return COMMANDS[args.command](args)
@@ -358,6 +360,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             OSError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return EXIT["ERROR"]
+    except Exception:  # noqa: BLE001 - any other crash must be ERROR, not exit 1 (BLOCKED)
+        return unexpected_error("observability")
 
 
 if __name__ == "__main__":
