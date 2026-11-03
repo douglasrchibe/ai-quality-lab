@@ -32,9 +32,14 @@ quality gates. This is a learning/portfolio project for AI-evaluation QA automat
 - Approved for Phase 11 (2026-11-03): a **sandboxed** tool-using agent, as a controlled scope
   expansion. Allowed: predefined tools, synthetic in-memory data, authorization enforced in code,
   human approval for consequential actions, a hard step limit. Not allowed: real external systems,
-  network or filesystem tools, unrestricted autonomy. Live planner: `qwen2.5:3b` (a larger model
-  needs a separate decision). JSON actions go through the existing `ChatClient`. AI-judge agent
-  metrics are deferred, and advisory only if ever added.
+  unrestricted autonomy, and any network access, filesystem access or network-capable tool in the
+  sandbox. The only permitted external I/O is the existing configured local Ollama `ChatClient`,
+  used by the live planner and injected (never a tool). Least privilege, no manager exception for
+  writes or consequential actions. All tool results are untrusted data and can never change
+  instructions, permissions, approvals or policy. A policy denial never hides an agent failure:
+  unsafe attempts fail their case. Live planner: `qwen2.5:3b` (a larger model needs a separate
+  decision). JSON actions go through the existing `ChatClient`. AI-judge agent metrics are
+  deferred, and advisory only if ever added.
 - Out of scope unless explicitly approved: making paid API calls on the user's behalf,
   databases, hosted vector stores, Docker, cloud services, custom web UIs, unrestricted
   autonomous agents (anything beyond the Phase 11 sandbox), deployment pipelines, dashboards.
