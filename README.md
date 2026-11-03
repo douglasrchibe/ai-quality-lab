@@ -32,9 +32,11 @@ see, and what each step proves.
 
 ## Current status
 
-**Phases 1–9 are complete.** Every phase was validated on GitHub Actions/Ubuntu; Phase 9 was
-merged on 2026-11-02. All six baselines (five deterministic, one live RAG) were approved by the
-project owner. Offline suite: **822 passed, 12 skipped** (the 12 are opt-in live-model tests).
+**Phases 1–10 are complete.** Every phase was validated on GitHub Actions/Ubuntu. Phase 10
+(rubric hardening and two rejected D-6.1 prompt experiments) was merged on 2026-11-03, and all six
+baselines (five deterministic, one live RAG) were approved by the project owner. Phase 11 (a
+sandboxed tool-using agent) is planned. Offline suite: **831 passed, 12 skipped** (the 12 are opt-in
+live-model tests).
 So far:
 - the project foundation
 - a deterministic mock chatbot
@@ -101,7 +103,7 @@ CurrentUser is sufficient. Alternatively, call the venv's Python directly withou
 python -m pytest
 ```
 
-Expected: **822 passed, 12 skipped**. The skips are the opt-in live-model tests
+Expected: **831 passed, 12 skipped**. The skips are the opt-in live-model tests
 (`test_llm_live.py`, `test_rag_live.py`); the CI skip audit fails on any other skip.
 
 Run a single module's tests by naming the file, e.g. `python -m pytest tests/test_mock_agent.py`.
@@ -973,5 +975,7 @@ package.json          Node.js tooling: pinned Promptfoo + npm scripts (lockfile 
 | 7 | GitHub Actions CI with deterministic quality gates | Done (see Phase 7 report) |
 | 8 | Quality observability: history, trends, regression detection, approved baselines | Done: validated on GitHub Actions; baselines owner-approved (see Phase 8 reports) |
 | 9 | Live RAG calibration: repeated runs, statistics, tolerance proposals, live baseline governance | Done: 16 real live runs; live baseline owner-approved (see Phase 9 and 9.1 reports) |
+| 10 | RAG rubric hardening, crash-is-ERROR CLI fix, pre-registered D-6.1 prompt experiments | Done: rubric hardened and re-baselined; experiments A and B both failed and were rejected (see the Phase 10 report) |
+| 11 | Sandboxed agent quality engineering | Planned ([docs/phase-11-plan.md](docs/phase-11-plan.md)) |
 
 Milestone acceptance criteria are documented in [CLAUDE.md](CLAUDE.md).

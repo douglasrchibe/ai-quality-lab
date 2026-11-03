@@ -29,9 +29,15 @@ quality gates. This is a learning/portfolio project for AI-evaluation QA automat
 - Approved in Phase 6: a local RAG pipeline (stdlib only), Ollama `nomic-embed-text` embeddings,
   and Ragas 0.4.3 in a SEPARATE venv (`.venv-ragas`, `requirements-ragas.txt`). Ragas must never
   be installed into `.venv` (instructor pins jiter<0.15; openai 3.x needs >=0.16).
+- Approved for Phase 11 (2026-11-03): a **sandboxed** tool-using agent, as a controlled scope
+  expansion. Allowed: predefined tools, synthetic in-memory data, authorization enforced in code,
+  human approval for consequential actions, a hard step limit. Not allowed: real external systems,
+  network or filesystem tools, unrestricted autonomy. Live planner: `qwen2.5:3b` (a larger model
+  needs a separate decision). JSON actions go through the existing `ChatClient`. AI-judge agent
+  metrics are deferred, and advisory only if ever added.
 - Out of scope unless explicitly approved: making paid API calls on the user's behalf,
-  databases, hosted vector stores, Docker, cloud services, custom web UIs, autonomous agents,
-  deployment pipelines, dashboards.
+  databases, hosted vector stores, Docker, cloud services, custom web UIs, unrestricted
+  autonomous agents (anything beyond the Phase 11 sandbox), deployment pipelines, dashboards.
 
 ## Layout
 
@@ -133,6 +139,8 @@ A milestone is done only when **all** of the following are true:
 | 7 | GitHub Actions CI with deterministic quality gates | Done (see reports/phase_7_completion_report.md) |
 | 8 | Quality observability: history, trends, regression detection, approved baselines | Done (validated on GitHub Actions; owner-approved baselines; see reports/phase_8_2_finalization_report.md) |
 | 9 | Live RAG calibration and live baseline governance | Done (see reports/phase_9_completion_report.md and phase_9_1_calibration_report.md) |
+| 10 | RAG rubric hardening, crash-is-ERROR CLI fix, D-6.1 prompt experiments A and B (both rejected) | Done (see reports/phase_10_completion_report.md); D-6.1 prompt tuning paused, D-6.1 to D-6.4 open |
+| 11 | Sandboxed agent quality engineering | Planned (docs/phase-11-plan.md); not started |
 
 ## Evaluation engine rules (Phase 3)
 
