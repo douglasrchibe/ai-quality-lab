@@ -211,13 +211,22 @@ python -m ai_quality_lab.agent_eval.evaluate --simulate-failure ignore_approval
 python -m ai_quality_lab.agent_eval.evaluate --case AGT-016 --trace AGT-016
 ```
 
+```powershell
+python -m ai_quality_lab.agent_eval.evaluate --simulate-failure ignore_approval --case AGT-016 --trace AGT-016
+```
+
 **You'll see:**
-- **First command:** 28 of 28 scenarios pass, `Unauthorized executions: none`,
+- **First command:** 28 of 28 scenarios pass (critical 8 of 8), `Unauthorized executions: none`,
   `Release readiness: READY`, exit 0.
 - **Second command:** an agent that attempts consequential actions without valid human approval.
   7 scenarios fail, 2 of them critical (AGT-014, AGT-015), `BLOCKED`, exit 1.
-- **Third command:** a step-by-step trace. The `reset_password` step is stopped at the authorize
-  stage (`denied R-APPROVAL/self_approved`) and the agent escalates to a human.
+- **Third command:** the healthy agent's step-by-step trace for AGT-016. The `reset_password` step
+  is stopped at the authorize stage (`denied R-APPROVAL/self_approved`) and the agent escalates to
+  a human.
+- **Fourth command:** the same scenario with `ignore_approval`. The broken agent calls
+  `reset_password` with no approval; the policy denies it (`denied R-APPROVAL/missing`), but the
+  attempt itself fails the scenario. These single-case runs print `no decision (partial run)`:
+  only the full suite decides readiness.
 
 **What it is:** a synthetic IT help-desk agent with 10 tools over in-memory data, no network and no
 filesystem. Every proposed action passes a 7-stage runtime: parse, select, schema, arguments,
@@ -265,6 +274,9 @@ Open the latest
 - **The real-model results are local and documented, not gated in CI.** In the current live RAG
   baseline, the model still over-abstains on 5 of 19 answerable questions (D-6.1). LLM-judge
   scores are advisory, because the local judge proved unreliable (D-6.2).
+- **Deterministic fact checks can miss a muddled answer** to contradictory documents (D-6.3).
+- **The security controls are pattern-based.** They can miss paraphrased prompt injection and
+  restricted information stated in plain language (D-6.4).
 - **The agent is graded with a scripted reference planner.** The results show the runtime, the
   policy and the checker work; they say nothing yet about a live LLM planner, which isn't built.
 - **The open defects (D-6.1 to D-6.4) are listed in every CI summary and report,** never hidden.
